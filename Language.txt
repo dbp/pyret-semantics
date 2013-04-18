@@ -1,0 +1,19 @@
+subset of Pyret that comes out of desugar
+-----------------------------------------
+
+lam
+app
+num
+bool
+str
+id
+
+var
+block
+method
+cond (cond-branch)
+assign
+onion
+obj
+bracket
+dot-method
