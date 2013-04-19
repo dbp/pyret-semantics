@@ -38,7 +38,8 @@ End UOT_to_OrderedTypeLegacy.
 Module Type ATOM.
 
   Parameter atom : Set.
-  Declare Module Atom : Orders.UsualOrderedType with Definition t := atom.
+  Declare Module Atom : Orders.UsualOrderedType
+      with Definition t := atom.
   Module Atom_as_OT : OrderedType.OrderedType
     with Definition t := atom
     with Definition eq := Atom.eq
