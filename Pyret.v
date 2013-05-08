@@ -489,6 +489,8 @@ Proof.
   inversion H. inversion H.
 Qed.
 
+(* This was sort of a baby-lemma, to get more familiar, so I could then prove
+   the real thing, decompose_det *)
 Lemma decompose_det_exp : forall x C y0 y1,
                         decompose x C y0 ->
                         decompose x C y1 -> y0 = y1.
@@ -513,17 +515,6 @@ Proof.
   intros. inversion H1. apply IHdecompose in H8. assumption.
 Qed.
 
-(* Lemma decompose_det_ctxt : forall x C0 C1 y, *)
-(*                              decompose x C0 y -> *)
-(*                              decompose x C1 y -> C0 = C1. *)
-(* Proof. *)
-(*   intros. *)
-(*   generalize dependent C1. *)
-(*   induction H. *)
-(*   Case "E_hole". *)
-(*   intros. inversion H0. *)
-(*   SCase "E_hole". reflexivity. *)
-(*   SCase "E_app1".  *)
 
 
 
@@ -548,7 +539,7 @@ Qed.
 
 Lemma decompose_det : forall x C0 C1 y0 y1,
                         decompose x C0 y0 ->
-                        decompose x C1 y1 -> y0 = y1.
+                        decompose x C1 y1 -> y0 = y1 /\ C0 = C1.
 Proof.
   intros.
   generalize dependent y1.
@@ -557,8 +548,9 @@ Proof.
   (* Focus 2. *)
   Case "ctxt_hole".
   intros. inversion H0.
-  SCase "ctxt_hole". reflexivity.
-  SCase "ctxt_app1". subst. inversion H. inversion H0.
+  SCase "ctxt_hole".
+  split ; reflexivity.
+  SCase "ctxt_app1". subst.  inversion H. inversion H0.
   apply values_dont_decompose with (E := E0) (e' := y1) in H4. contradiction.
   SCase "ctxt_app2". subst.
   inversion H. apply values_dont_decompose with (E := E0) (e' := y1) in H6. contradiction.
@@ -578,19 +570,22 @@ Proof.
      we want to show that e' = y1. *)
   inversion H0. subst. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H4.
   exfalso. auto.
-  subst. apply IHdecompose in H5. assumption. subst.
+  subst. apply IHdecompose in H5. split. apply proj1 in H5. assumption. apply proj2 in H5. subst.
+  reflexivity.
   apply values_dont_decompose with (E := E0) (e' := e') in H3. exfalso. auto.
   Case "ctxt_app2".
   intros.
   inversion H1. subst. inversion H2. apply values_dont_decompose with (E := E0) (e' := e') in H6.
   exfalso. auto.
   subst. apply values_dont_decompose with (E := E1) (e' := y1) in H. exfalso. auto.
-  subst. apply IHdecompose in H7. assumption.
-  Case "ctxt_getfield".
+  subst. apply IHdecompose in H7. split. apply proj1 in H7. assumption. assert (E0 = E1).
+  apply proj2 in H7. assumption. subst. reflexivity.
+  case "ctxt_getfield".
   intros.
   inversion H0. subst. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H3.
   exfalso. auto.
-  subst. apply IHdecompose in H5. assumption.
+  subst. apply IHdecompose in H5. split. apply proj1 in H5. assumption. apply proj2 in H5. subst.
+  reflexivity.
   Case "ctxt_obj".
   intros.
   inversion H0. subst. inversion H1.
@@ -604,19 +599,24 @@ Proof.
     apply proj1 in H3. assumption. intro. destruct x. simpl. apply values_dec.
     unfold values in are_vals0. rewrite <- forall_map_comm. assumption.
     rewrite <- forall_map_comm. assumption. simpl. assumption. simpl. assumption.
-  subst. apply app_inv_head in H3. inversion H3. subst. apply IHdecompose in H5. assumption.
+  subst. apply app_inv_head in H3. inversion H3. subst. apply IHdecompose in H5.
+  split. apply proj1 in H5. assumption. apply proj2 in H5. subst.
+  (* NOTE: How can I prove that are_vals and are_vals0 are the same? ie that Forall is one-to-one. *)
+  admit.
   Case "ctxt_delta1".
   intros.
   inversion H0. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H7.
   contradiction.
-  subst. apply IHdecompose in H6. assumption.
+  subst. apply IHdecompose in H6. split. apply proj1 in H6. assumption. apply proj2 in H6. subst.
+  reflexivity.
   subst. apply values_dont_decompose with (E := E0) (e' := e') in H6. contradiction.
   Case "ctxt_delta2".
   intros.
   inversion H1. inversion H2.
   apply values_dont_decompose with (E := E0) (e' := e') in H10. contradiction.
   subst. apply values_dont_decompose with (E := E1) (e' := y1) in H. contradiction.
-  subst. apply IHdecompose in H8. assumption.
+  subst. apply IHdecompose in H8. split. apply proj1 in H8. assumption. apply proj2 in H8. subst.
+  reflexivity.
 Qed.
 
 
@@ -624,17 +624,28 @@ Qed.
 Definition partial_function {X: Type} (R: relation X) :=
   forall x y1 y2 : X, R x y1 -> R x y2 -> y1 = y2.
 
-Theorem pyret_step_deterministic :
-  partial_function step.
+Theorem pyret_step_deterministic : forall x y0 y1,
+                        step x y0 ->
+                        step x y1 -> y0 = y1.
+
 Proof with eauto.
-  unfold partial_function.
   intros x y1 y2 Hy1 Hy2.
   generalize dependent y2.
   induction Hy1.
   Case "sdecompose".
   intros y2 Hy2.
   inversion Hy2.
-  subst.
+  SCase "sdecompose".
+  subst. assert (e' = e'0 /\ E0 = E1). apply decompose_det with (x := e) (C0 := E0) (C1 := E1) ; assumption.
+  remember H2 as H2'.
+  clear HeqH2'.
+  apply proj1 in H2'.
+  subst. apply IHHy1 in H1. subst.
+  apply proj2 in H2. subst. reflexivity. SearchAbout Forall.
+
+  assert (E0 = E1).
+  assert ()
+  apply decompose_det with (x := e) (C0 := E0) (C1 := E1).
 
 
 
