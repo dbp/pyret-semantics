@@ -538,8 +538,8 @@ Proof.
   induction l0. intros.
   induction l1. split. reflexivity. split. simpl in H. inversion H. reflexivity.
   simpl in H. inversion H. reflexivity.
-  simpl in H. inversion H. subst. inversion H1. exfalso. auto.
-  intros. induction l1. simpl in H. inversion H. subst. inversion H0. exfalso. auto.
+  simpl in H. inversion H. subst. inversion H1. contradiction.
+  intros. induction l1. simpl in H. inversion H. subst. inversion H0. contradiction.
   inversion H. apply IHl0 in H6. split. assert (l0 = l1).
   apply proj1 in H6. assumption. rewrite H4. reflexivity.
   apply proj2 in H6. assumption.
@@ -559,18 +559,18 @@ Proof.
   intros. inversion H0.
   SCase "ctxt_hole". reflexivity.
   SCase "ctxt_app1". subst. inversion H. inversion H0.
-  apply values_dont_decompose with (E := E0) (e' := y1) in H4. exfalso. auto.
+  apply values_dont_decompose with (E := E0) (e' := y1) in H4. contradiction.
   SCase "ctxt_app2". subst.
-  inversion H. apply values_dont_decompose with (E := E0) (e' := y1) in H6. exfalso. auto.
+  inversion H. apply values_dont_decompose with (E := E0) (e' := y1) in H6. contradiction.
   SCase "ctxt_getfield".
   inversion H. subst. inversion H7. subst. inversion H6. subst.
-  apply values_dont_decompose with (E := E0) (e' := y1) in H5. exfalso. auto.
+  apply values_dont_decompose with (E := E0) (e' := y1) in H5. contradiction.
   subst. inversion H7.
   SCase "ctxt_obj". subst. inversion H.
   SCase "ctxt_delta1". inversion H. subst. inversion H7. subst. inversion H6. subst.
-  inversion H7. subst. apply values_dont_decompose with (E := E0) (e' := y1) in H5. exfalso. auto.
+  inversion H7. subst. apply values_dont_decompose with (E := E0) (e' := y1) in H5. contradiction.
   SCase "ctxt_delta2". inversion H. subst. inversion H8. subst. inversion H7. subst. inversion H8.
-  subst. apply values_dont_decompose with (E := E0) (e' := y1) in H7. exfalso. auto.
+  subst. apply values_dont_decompose with (E := E0) (e' := y1) in H7. contradiction.
   Case "ctxt_app1".
   intros.
   (* The induction is confusing me here. x is (eapp e1 e2). C0 should be (E_app1 E0 e2), but
@@ -600,12 +600,23 @@ Proof.
   unfold not. intro.
   apply values_dont_decompose with (E := E0) (e' := e') in H2. auto.
   assert (vs0 = vs).
-  apply forall_head with (P := fun p : atom*exp => values_dec ((@snd atom exp) p)) in H3.
-  apply proj1 in H3. assumption. intro. remember x as x'. destruct x.
-  intro.
-
-
-
+    apply forall_head with (P := fun p : atom*exp => value ((@snd atom exp) p)) in H3.
+    apply proj1 in H3. assumption. intro. destruct x. simpl. apply values_dec.
+    unfold values in are_vals0. rewrite <- forall_map_comm. assumption.
+    rewrite <- forall_map_comm. assumption. simpl. assumption. simpl. assumption.
+  subst. apply app_inv_head in H3. inversion H3. subst. apply IHdecompose in H5. assumption.
+  Case "ctxt_delta1".
+  intros.
+  inversion H0. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H7.
+  contradiction.
+  subst. apply IHdecompose in H6. assumption.
+  subst. apply values_dont_decompose with (E := E0) (e' := e') in H6. contradiction.
+  Case "ctxt_delta2".
+  intros.
+  inversion H1. inversion H2.
+  apply values_dont_decompose with (E := E0) (e' := e') in H10. contradiction.
+  subst. apply values_dont_decompose with (E := E1) (e' := y1) in H. contradiction.
+  subst. apply IHdecompose in H8. assumption.
 Qed.
 
 
