@@ -3,10 +3,11 @@ Require Import ListExt.
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Strings.String.
 
-Module Pyret (Import Atom : ATOM) (Import String : STRING).
+Module Pyret (Import AtomM : ATOM) (Import String : STRING).
 
-Module Atoms := Coq.MSets.MSetList.Make (Atom.Atom).
-Module AtomEnv := Coq.FSets.FMapList.Make (Atom.Atom_as_OT).
+Module Atom := AtomM.AtomUOT.
+Module Atoms := Coq.MSets.MSetList.Make (Atom).
+Module AtomEnv := Coq.FSets.FMapList.Make (AtomM.Atom_as_OT).
 
 
 Lemma eq_atom_refl : forall (a : atom), Atom.eq a a.
@@ -16,7 +17,7 @@ Proof. intros. symmetry. assumption. Qed.
 Lemma eq_atom_trans : forall (a1 a2 a3 : atom), Atom.eq a1 a2 -> Atom.eq a2 a3 -> Atom.eq a1 a3.
 Proof. intros. transitivity a2; assumption. Qed.
 
-Add Relation Atom.atom Atom.eq
+Add Relation AtomM.atom Atom.eq
   reflexivity proved by eq_atom_refl
   symmetry proved by eq_atom_sym
   transitivity proved by eq_atom_trans
@@ -31,8 +32,8 @@ Ltac destruct_eq_dec a b :=
                  | [ H : ?x <> ?x |- _ ]
                    => exfalso; apply H; reflexivity end].
 
-Definition atom := Atom.atom. (* free variables *)
-Definition loc := Atom.atom.
+Definition atom := AtomM.atom. (* free variables *)
+Definition loc := AtomM.atom.
 Definition string := String.string.
 
 Parameter __check__ : atom.
@@ -45,7 +46,8 @@ Axiom has_add_distinct : __has_brand__ <> __add_brand__.
 
 (* Tests *)
 Goal (if Atom.eq_dec __check__ __check__ then 5 else 6) = 5.
-destruct_eq_dec __check__ __check__. Defined.
+destruct_eq_dec __check__ __check__.
+Defined.
 Goal (if Atom.eq_dec __check__ __brand__ then 5 else 6) = 6.
 destruct_eq_dec __check__ __brand__.
   exfalso. apply check_brand_distinct; auto. Qed.
@@ -65,7 +67,7 @@ Inductive exp : Set :=
   | egetfield : atom -> exp -> exp.
 Set Elimination Schemes.
 
-Definition exp_rec :=
+Definition exp_ind :=
   fun (P : exp -> Prop)
   (exp_rec_lam :
      forall (bs : list brand)
@@ -125,11 +127,10 @@ Inductive E : Set :=
   | E_getfield : atom -> E -> E
   | E_obj : forall (bs : list brand)
                    (vs : list (atom * exp))
-                   (es : list (atom * exp)), 
-              (Forall value (values vs)) -> atom -> E -> E
+                   (es : list (atom * exp)),
+              (Forall value (values vs)) ->  atom -> E -> E
   | E_delta1 : atom -> E -> exp -> E
   | E_delta2 : atom -> exp -> E -> E.
-
 
 Inductive ae : exp -> Prop :=
   | redex_app  : forall e1 e2, value e1 -> value e2 -> ae (eapp e1 e2)
@@ -172,11 +173,11 @@ Fixpoint plug (e : exp) (cxt : E) := match cxt with
   | E_app2 v ctxt => eapp v (plug e ctxt)
   | E_getfield a ctxt => egetfield a (plug e ctxt)
   | E_obj bs vs es _ a ctxt => eobj bs (vs++(a,plug e ctxt)::es)
-  | E_delta1 a ctxt e => edelta a (plug e ctxt) e
+  | E_delta1 a ctxt e' => edelta a (plug e ctxt) e'
   | E_delta2 a v ctxt => edelta a v (plug e ctxt)
   end.
 
-  
+
 SearchAbout sumbool.
 
 SearchAbout pair.
@@ -270,13 +271,11 @@ Inductive step : exp -> exp -> Prop :=
              step e e' ->
              step (eobj bs (vs ++ (cons (a,e) es)))
                   (eobj bs (vs ++ (cons (a,e') es)))
-  | sgetfield : forall bs vs a,
+  | sgetfield : forall bs vs es a e,
                   Forall value (values vs) ->
-                  In a (map fst vs) ->
-                  step (eobj bs vs)
-                       (* BAD: my default value is false *)
-                       (lookup_assoc vs a (ebool nil false)
-                                     Atom.eq_dec)
+                  Forall value (values es) ->
+                  step (egetfield a (eobj bs (vs ++ (cons (a,e) es))))
+                       e
   | sdelta1 : forall a e1 e1' e2,
                step e1 e1' ->
                step (edelta a e1 e2) (edelta a e1' e2)
@@ -358,50 +357,37 @@ Proof.
   reflexivity.
 Qed.
 
-Example step_obj1 :
-  multistep
-    (eobj nil
-          ((f1,ebool nil true)
-             ::(f2, edelta __has_brand__
-                       (ebrand (mkbrand __some_brand__))
-                       (ebool nil true))
-             ::nil))
-    (eobj nil ((f1,ebool nil true)::(f2,ebool nil false)::nil)).
-Proof.
-  eapply multi_step.
-  Print sdecompose.
-  replace  ((f1,ebool nil true)
-             ::(f2, edelta __has_brand__
-                       (ebrand (mkbrand __some_brand__))
-                       (ebool nil true))
-             ::nil) with  ([(f1,ebool nil true)]
-             ++ ((f2, edelta __has_brand__
-                       (ebrand (mkbrand __some_brand__))
-                       (ebool nil true))
-             ::nil)) by auto.
-  eapply sdecompose.
-  eapply ctxt_obj.
-  eapply ctxt_hole.
-  
-  rewrite fold_cons.
-  rewrite <- app_split.
-  eapply multi_step with
-  (y := (eobj nil ([(f1, ebool [] true)] ++ [(f2, ebool [] false)] ++ nil))).
-  apply sobj.
-  simpl.
-  constructor.
-  constructor.
-  constructor.
-  constructor.
-  unfold not.
-  intros.
-  inversion H.
-  apply sdelta_hb.
-  constructor.
-  rewrite app_split.
-  simpl.
-  apply multi_refl.
-Qed.
+(* Example step_obj1 : *)
+(*   multistep *)
+(*     (eobj nil *)
+(*           ((f1,ebool nil true) *)
+(*              ::(f2, edelta __has_brand__ *)
+(*                        (ebrand (mkbrand __some_brand__)) *)
+(*                        (ebool nil true)) *)
+(*              ::nil)) *)
+(*     (eobj nil ((f1,ebool nil true)::(f2,ebool nil false)::nil)). *)
+(* Proof. *)
+(*   SearchAbout Forall. *)
+(*   eapply multi_step. *)
+(*   replace  ((f1,ebool nil true) *)
+(*              ::(f2, edelta __has_brand__ *)
+(*                        (ebrand (mkbrand __some_brand__)) *)
+(*                        (ebool nil true)) *)
+(*              ::nil) with  ([(f1,ebool nil true)] *)
+(*              ++ ((f2, edelta __has_brand__ *)
+(*                        (ebrand (mkbrand __some_brand__)) *)
+(*                        (ebool nil true)) *)
+(*              ::nil)) by auto. *)
+(*   eapply sdecompose. *)
+(*   apply ctxt_obj. *)
+(*   apply ctxt_hole. *)
+(*   apply redex_delta. *)
+(*   constructor. constructor. *)
+(*   eapply sdelta_hb. *)
+(*   constructor. *)
+(*   simpl. *)
+(*   eapply multi_refl. *)
+(* Qed. *)
 
 
 Parameter __arg__ : atom.
@@ -419,6 +405,249 @@ Proof.
   apply multi_refl.
 Qed.
 
+Example step_getfield1 :
+  multistep
+    (egetfield f1 (eobj [] [(f1, ebool nil true)]))
+    (ebool nil true).
+Proof.
+  eapply multi_step.
+  change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]).
+  eapply sgetfield.
+  constructor.
+  constructor.
+  eapply multi_refl.
+Qed.
+
+
+(* Start the actual proofs of things that are actually interesting. *)
+Theorem values_dont_step : forall e e', value e -> ~ step e e'.
+Proof.
+  admit.
+Qed.
+
+
+(* Note: following couple of lemmas taken dirently or adapted from lambda js *)
+Lemma decompose_ae : forall e E e',
+  decompose e E e' -> ae e'.
+Proof with auto. intros. induction H... Qed.
+
+Lemma plug_ok : forall e E e',
+  decompose e E e' -> plug e' E = e.
+Proof.
+  intros.
+  induction H; try (auto || simpl; rewrite IHdecompose; reflexivity).
+Qed.
+
+Lemma values_dec : forall e, value e \/ ~ value e.
+Proof with eauto.
+unfold not. intro.
+induction e; try solve [left; constructor | right; intro H; inversion H].
+Case "e_obj".
+apply (forall_dec_dec_forall value (l:=(map (@snd atom exp) fs))) in H.
+inversion H.
+left; constructor; unfold values; auto... right. intro. inversion H1. contradiction.
+Qed.
+
+(* My lemmas start *)
+
+Lemma values_dont_decompose : forall e E e', value e -> ~ decompose e E e'.
+Proof.
+  intros. unfold not. intro.
+  (* This is absolute insanity. the whole point is that active expressions are not compatible with *)
+  (* values, but I can't seem to get coq to recognize that in a non-heinous manner.  *)
+  induction H0.
+  inversion H. inversion H0. subst. inversion H4. subst.
+  inversion H3. subst. inversion H4. inversion H0. subst. inversion H5. subst. inversion H4.
+  subst. inversion H5. inversion H0. subst. inversion H4. subst. inversion H3. subst. inversion H4.
+  inversion H0. subst. inversion H4. subst. inversion H3. subst. inversion H4. inversion H.
+  inversion H. inversion H.
+  (* Object case sucks! *)
+  inversion H. inversion H0. subst. SearchAbout Forall. rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  SearchAbout Forall.
+  inversion H2. simpl in H5. apply IHdecompose. assumption.
+  (* apparently I don't know how to make the repeat tactic work. *)
+(*      repeat (this stuff) only does it one time. copy-paste works 6 times.*)
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  rewrite forall_map_comm in H2.
+  rewrite forall_app in H2. apply proj2 in H2.
+  inversion H2. simpl in H10. apply IHdecompose. assumption.
+  inversion H. inversion H.
+Qed.
+
+Lemma decompose_det_exp : forall x C y0 y1,
+                        decompose x C y0 ->
+                        decompose x C y1 -> y0 = y1.
+Proof.
+  intros.
+  generalize dependent y1.
+  induction H.
+  Case "ctxt_hole".
+  intros. inversion H0. reflexivity.
+  Case "ctxt_app1".
+  intros. inversion H0. subst. apply IHdecompose in H5. assumption.
+  Case "ctxt_app2".
+  intros. inversion H1. subst. apply IHdecompose in H7. assumption.
+  Case "ctxt_getfield".
+  intros. inversion H0. subst. apply IHdecompose in H5. assumption.
+  Case "ctxt_obj".
+  intros. inversion H0. subst. apply app_inv_head in H3. inversion H3. subst.
+  apply IHdecompose in H8. assumption.
+  Case "ctxt_delta1".
+  intros. inversion H0. apply IHdecompose in H6. assumption.
+  Case "ctxt_delta2".
+  intros. inversion H1. apply IHdecompose in H8. assumption.
+Qed.
+
+(* Lemma decompose_det_ctxt : forall x C0 C1 y, *)
+(*                              decompose x C0 y -> *)
+(*                              decompose x C1 y -> C0 = C1. *)
+(* Proof. *)
+(*   intros. *)
+(*   generalize dependent C1. *)
+(*   induction H. *)
+(*   Case "E_hole". *)
+(*   intros. inversion H0. *)
+(*   SCase "E_hole". reflexivity. *)
+(*   SCase "E_app1".  *)
+
+
+
+Lemma forall_head : forall A (l0 : list A) (e0 : A) (t0 : list A)
+                           (l1 : list A) (e1 : A) (t1 : list A)
+                           (P : A -> Prop) (dec : forall (x : A), (P x) \/ ~ (P x)),
+                      (l0 ++ e0 :: t0) = (l1 ++ e1 :: t1) -> Forall P l0 -> Forall P l1 ->
+                      ~ P e0 -> ~ P e1 -> l0 = l1 /\ e0 = e1 /\ t0 = t1.
+Proof.
+  (* Not my prettiest proof... *)
+  intros. generalize dependent l1.
+  induction l0. intros.
+  induction l1. split. reflexivity. split. simpl in H. inversion H. reflexivity.
+  simpl in H. inversion H. reflexivity.
+  simpl in H. inversion H. subst. inversion H1. exfalso. auto.
+  intros. induction l1. simpl in H. inversion H. subst. inversion H0. exfalso. auto.
+  inversion H. apply IHl0 in H6. split. assert (l0 = l1).
+  apply proj1 in H6. assumption. rewrite H4. reflexivity.
+  apply proj2 in H6. assumption.
+  inversion H0. assumption. inversion H1. assumption.
+Qed.
+
+Lemma decompose_det : forall x C0 C1 y0 y1,
+                        decompose x C0 y0 ->
+                        decompose x C1 y1 -> y0 = y1.
+Proof.
+  intros.
+  generalize dependent y1.
+  generalize dependent C1.
+  induction H.
+  (* Focus 2. *)
+  Case "ctxt_hole".
+  intros. inversion H0.
+  SCase "ctxt_hole". reflexivity.
+  SCase "ctxt_app1". subst. inversion H. inversion H0.
+  apply values_dont_decompose with (E := E0) (e' := y1) in H4. exfalso. auto.
+  SCase "ctxt_app2". subst.
+  inversion H. apply values_dont_decompose with (E := E0) (e' := y1) in H6. exfalso. auto.
+  SCase "ctxt_getfield".
+  inversion H. subst. inversion H7. subst. inversion H6. subst.
+  apply values_dont_decompose with (E := E0) (e' := y1) in H5. exfalso. auto.
+  subst. inversion H7.
+  SCase "ctxt_obj". subst. inversion H.
+  SCase "ctxt_delta1". inversion H. subst. inversion H7. subst. inversion H6. subst.
+  inversion H7. subst. apply values_dont_decompose with (E := E0) (e' := y1) in H5. exfalso. auto.
+  SCase "ctxt_delta2". inversion H. subst. inversion H8. subst. inversion H7. subst. inversion H8.
+  subst. apply values_dont_decompose with (E := E0) (e' := y1) in H7. exfalso. auto.
+  Case "ctxt_app1".
+  intros.
+  (* The induction is confusing me here. x is (eapp e1 e2). C0 should be (E_app1 E0 e2), but
+     is missing, for unknown reason. y0 is e'. C1 is anything, y1 is anything.  and of course
+     we want to show that e' = y1. *)
+  inversion H0. subst. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H4.
+  exfalso. auto.
+  subst. apply IHdecompose in H5. assumption. subst.
+  apply values_dont_decompose with (E := E0) (e' := e') in H3. exfalso. auto.
+  Case "ctxt_app2".
+  intros.
+  inversion H1. subst. inversion H2. apply values_dont_decompose with (E := E0) (e' := e') in H6.
+  exfalso. auto.
+  subst. apply values_dont_decompose with (E := E1) (e' := y1) in H. exfalso. auto.
+  subst. apply IHdecompose in H7. assumption.
+  Case "ctxt_getfield".
+  intros.
+  inversion H0. subst. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H3.
+  exfalso. auto.
+  subst. apply IHdecompose in H5. assumption.
+  Case "ctxt_obj".
+  intros.
+  inversion H0. subst. inversion H1.
+  subst. assert (~ value e0). unfold not. intro.
+  apply values_dont_decompose with (E := E1) (e' := y1) in H1. auto.
+  assert (~ value e).
+  unfold not. intro.
+  apply values_dont_decompose with (E := E0) (e' := e') in H2. auto.
+  assert (vs0 = vs).
+  apply forall_head with (P := fun p : atom*exp => values_dec ((@snd atom exp) p)) in H3.
+  apply proj1 in H3. assumption. intro. remember x as x'. destruct x.
+  intro.
+
+
+
+Qed.
+
+
+
+Definition partial_function {X: Type} (R: relation X) :=
+  forall x y1 y2 : X, R x y1 -> R x y2 -> y1 = y2.
+
+Theorem pyret_step_deterministic :
+  partial_function step.
+Proof with eauto.
+  unfold partial_function.
+  intros x y1 y2 Hy1 Hy2.
+  generalize dependent y2.
+  induction Hy1.
+  Case "sdecompose".
+  intros y2 Hy2.
+  inversion Hy2.
+  subst.
+
+
+
+  subst.
+  inversion
+  apply plug_ok in H0. apply plug_ok in H.
+
+
+
+  intros.
+  rewrite plug_ok with (e := e).
+
+
+
+  Case "sapp".
+  inversion H0.
+
+  Case "elam".
+  apply values_dont_step in H. exfalso. assumption. constructor.
+  Case "eapp".
+  admit.
+  Case "eid".
+  inversion H. inversion H1.
+  (* Why can't I get a contradiction; there is clearly no way to step from eid *)
 
 
 End Pyret.
