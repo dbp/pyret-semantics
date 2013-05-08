@@ -38,17 +38,17 @@ End UOT_to_OrderedTypeLegacy.
 Module Type ATOM.
 
   Parameter atom : Set.
-  Declare Module Atom : Orders.UsualOrderedType
+  Declare Module AtomUOT : Orders.UsualOrderedType
       with Definition t := atom.
   Module Atom_as_OT : OrderedType.OrderedType
     with Definition t := atom
-    with Definition eq := Atom.eq
-      := UOT_to_OrderedTypeLegacy(Atom).
+    with Definition eq := AtomUOT.eq
+      := UOT_to_OrderedTypeLegacy(AtomUOT).
   Parameter atom_fresh_for_list : forall (xs : list atom),
     exists x : atom, ~ List.In x xs.
-  Definition atom_eq_dec := Atom.eq_dec.
-  Lemma atom_dec_eq : forall (a1 a2 : atom), Atom.eq a1 a2 \/ ~ Atom.eq a1 a2.
-  Proof. intros. assert (H := atom_eq_dec a1 a2). unfold Atom.eq. destruct H; subst; auto. Qed.
+  Definition atom_eq_dec := AtomUOT.eq_dec.
+  Lemma atom_dec_eq : forall (a1 a2 : atom), AtomUOT.eq a1 a2 \/ ~ AtomUOT.eq a1 a2.
+  Proof. intros. assert (H := atom_eq_dec a1 a2). unfold AtomUOT.eq. destruct H; subst; auto. Qed.
 
 End ATOM.
 
