@@ -271,6 +271,8 @@ Inductive red : exp -> exp -> Prop :=
   | red_getfield : forall bs vs es a e,
                      Forall value (values vs) ->
                      Forall value (values es) ->
+                     ~ In a (map (@fst atom exp) vs) ->
+                     value e ->
                      red (egetfield a (eobj bs (vs ++ (cons (a,e) es))))
                          e
   | red_delta_hb : forall e b,
@@ -442,16 +444,12 @@ Proof.
   apply sdecompose with (e' := (egetfield f1 (eobj [] [(f1, ebool [] true)]))).
   apply ctxt_hole. constructor. constructor. simpl. apply Forall_cons. constructor. constructor.
   change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]).
-  apply red_getfield. simpl. constructor. simpl. constructor.
+  apply red_getfield. simpl. constructor. simpl. constructor. simpl. auto. constructor.
   eapply multi_refl.
 Qed.
 
 
 (* Start the actual proofs of things that are actually interesting. *)
-Theorem values_dont_step : forall e e', value e -> ~ step e e'.
-Proof.
-  admit.
-Qed.
 
 
 (* Note: following couple of lemmas taken dirently or adapted from lambda js *)
@@ -517,8 +515,16 @@ Proof.
   inversion H. inversion H.
 Qed.
 
+Theorem values_dont_step : forall e e', value e -> ~ step e e'.
+Proof.
+  intros. unfold not. intro. inversion H0.
+  apply values_dont_decompose with (E := E0) (e' := e'0) in H.
+  contradiction.
+Qed.
+
 (* This was sort of a baby-lemma, to get more familiar, so I could then prove
-   the real thing, decompose_det *)
+   the real thing, decompose_det. there is no point in having it, but I spent time on it
+   so I don't want to delete it. *)
 Lemma decompose_det_exp : forall x C y0 y1,
                         decompose x C y0 ->
                         decompose x C y1 -> y0 = y1.
@@ -646,6 +652,48 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma red_det : forall x y0 y1,
+                  red x y0 ->
+                  red x y1 -> y0 = y1.
+Proof.
+  intros.
+  generalize dependent y1.
+  induction H.
+  Case "red_app".
+  intros. inversion H0. reflexivity.
+  Case "red_obj".
+  intros. inversion H3. subst.
+  assert (vs0 = vs).
+  apply forall_head with (P := fun p : atom*exp => value ((@snd atom exp) p)) in H5.
+  apply proj1 in H5. assumption. intros. destruct x. apply values_dec.
+  unfold values in H6. rewrite <- forall_map_comm. assumption.
+  unfold values in H. rewrite <- forall_map_comm. assumption. simpl. assumption. simpl. assumption.
+  subst. apply app_inv_head in H5. inversion H5. subst. f_equal.
+  assert (e' = e'0).
+  apply IHred. assumption. subst. reflexivity.
+  Case "red_getfield".
+  intros. inversion H3. subst.
+  apply forall_head with (P := fun p : atom*exp => ~ Atom.eq (fst p) a) in H6.
+  apply proj2 in H6. apply proj1 in H6. inversion H6. reflexivity.
+  intro. destruct x. simpl.
+  unfold not. 
+  SearchAbout not.  (* AtomM.atom_dec_eq. *)
+  (* Hard: dealing with decidability, so that we can ensure we get the same field *)
+  admit. admit. admit.
+  simpl. remember (eq_atom_refl a) as H12. SearchAbout not. apply not_not in H12.
+  
+  
+  apply forall_head with (P := fun p : atom*exp => value ((@snd atom exp) p)) in H5.
+  apply proj2 in H5. apply proj1 in H5. inversion H5. reflexivity.
+  intro. destruct x. apply values_dec.
+  unfold values in H6. rewrite <- forall_map_comm. assumption.
+  unfold values in H. rewrite <- forall_map_comm. assumption.
+  simpl. 
+  
+  rewrite app_inv_head with (l := vs) (l2 := (a, e'0) :: es) (l1 := (a, e') :: es).
+  
+Qed.
+
 Theorem pyret_step_deterministic : forall x y0 y1,
                         step x y0 ->
                         step x y1 -> y0 = y1.
@@ -660,11 +708,28 @@ Proof with eauto.
   SCase "sdecompose".
   subst. assert (e' = e'0 /\ E0 = E1). apply decompose_det with (x := e) (C0 := E0) (C1 := E1) ;
                                        assumption.
-  remember H2 as H2'.
-  clear HeqH2'.
-  apply proj1 in H2'.
-  subst. apply IHHy1 in H1. subst.
-  apply proj2 in H2. subst. reflexivity.
+  remember H3 as H3'.
+  clear HeqH3'.
+  apply proj2 in H3'.
+  subst. f_equal. apply red_det with (x := e'). apply proj1 in H3. subst. assumption.
+  apply proj1 in H3. subst. assumption.
 Qed.
+
+Fixpoint has_no_deltas (e : exp) : bool :=
+  match e with
+    | elam _ _ body =>
+      has_no_deltas body
+    | eapp fn arg =>
+      orb (has_no_deltas fn) (has_no_deltas arg)
+    | eid x' =>
+      false
+    | edelta _ _ _ => true
+    | eobj _ vs =>
+      existsb (fun x => has_no_deltas (snd x)) vs
+    | egetfield a o => has_no_deltas o
+    | ebool _ _ => false
+    | ebrand _ => false
+  end.
+
 
 End Pyret.
