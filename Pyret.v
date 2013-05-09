@@ -652,6 +652,25 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma not_in_cons : forall (A : Type) (x : A) (a : A) (l : list A),
+                 ~ In x (a :: l) -> ~ In x l.
+Proof.
+  intros.
+  unfold not in *. intro. apply in_cons with (a := a) in H0. contradiction.
+Qed.
+
+Lemma not_in_forall : forall (A : Type) (x : A) (l : list A),
+                        ~ In x l -> Forall (fun y => ~ x = y) l.
+Proof.
+  intros. induction l.
+  Case "[]".
+  constructor.
+  Case "a::l".
+  apply Forall_cons. unfold not. intro. subst.
+  unfold not in H. apply H. apply in_eq.
+  apply not_in_cons in H. apply IHl in H. assumption.
+Qed.
+
 Lemma red_det : forall x y0 y1,
                   red x y0 ->
                   red x y1 -> y0 = y1.
@@ -672,26 +691,23 @@ Proof.
   assert (e' = e'0).
   apply IHred. assumption. subst. reflexivity.
   Case "red_getfield".
-  intros. inversion H3. subst.
-  apply forall_head with (P := fun p : atom*exp => ~ Atom.eq (fst p) a) in H6.
+  intros. inversion H3. subst. SearchAbout sumbool.
+  apply forall_head with (P := fun p : atom*exp => ~ (a = (fst p))) in H6.
   apply proj2 in H6. apply proj1 in H6. inversion H6. reflexivity.
-  intro. destruct x. simpl.
-  unfold not. 
-  SearchAbout not.  (* AtomM.atom_dec_eq. *)
-  (* Hard: dealing with decidability, so that we can ensure we get the same field *)
-  admit. admit. admit.
-  simpl. remember (eq_atom_refl a) as H12. SearchAbout not. apply not_not in H12.
-  
-  
-  apply forall_head with (P := fun p : atom*exp => value ((@snd atom exp) p)) in H5.
-  apply proj2 in H5. apply proj1 in H5. inversion H5. reflexivity.
-  intro. destruct x. apply values_dec.
-  unfold values in H6. rewrite <- forall_map_comm. assumption.
-  unfold values in H. rewrite <- forall_map_comm. assumption.
-  simpl. 
-  
-  rewrite app_inv_head with (l := vs) (l2 := (a, e'0) :: es) (l1 := (a, e') :: es).
-  
+  (* The next three lines are needed to prove what seems like a trivial thing;
+     that ~ eq is decidable on atoms *)
+  intro. destruct x. simpl. rewrite or_comm. apply not_and. apply dec_not. apply AtomM.atom_dec_eq.
+  unfold not at 1. intro. remember H4 as H5. clear HeqH5. apply proj1 in H4.
+  apply proj2 in H5. contradiction.
+  apply not_in_forall in H10. rewrite forall_map_comm in H10. assumption.
+  apply not_in_forall in H1. rewrite forall_map_comm in H1. assumption.
+  simpl. auto.
+  simpl. auto.
+  Case "red_delta_hb".
+  intros. inversion H0. subst. reflexivity. subst. exfalso. symmetry in H1.
+  apply has_add_distinct in H1. assumption.
+  Case "red_delta_ab".
+  intros. inversion H0. subst. exfalso. apply has_add_distinct in H1. assumption. reflexivity.
 Qed.
 
 Theorem pyret_step_deterministic : forall x y0 y1,
