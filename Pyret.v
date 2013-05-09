@@ -236,6 +236,11 @@ Fixpoint brand_elem (l:list brand) (b:brand) : bool :=
 Fixpoint has_brand (b:brand) (e:exp) : bool :=
   brand_elem (brand_list e) b.
 
+Inductive has_brand_rel : exp -> brand -> Prop :=
+  | has_brand_obj : forall l b vs, In b l -> has_brand_rel (eobj l vs) b
+  | has_brand_bool : forall l b v, In b l -> has_brand_rel (ebool l v) b
+  | has_brand_lam : forall l a b body, In b l -> has_brand_rel (elam l a body) b.
+
 Fixpoint add_brand (b:brand) (e:exp) : exp :=
   if has_brand b e then e else
   match e with
@@ -283,8 +288,8 @@ Inductive red : exp -> exp -> Prop :=
                      value e ->
                      red (edelta __add_brand__ (ebrand b) e)
                          (add_brand b e).
-  
-  
+
+
 
 Inductive step : exp -> exp -> Prop :=
   | sdecompose : forall e E e' e'',
@@ -425,7 +430,7 @@ Proof.
   eapply sdecompose.
   apply ctxt_hole. constructor. constructor. constructor.
   assert ((ebool [] true) = (subst __arg__ (ebool [] true) (eid __arg__))). simpl.
-  destruct_eq_dec __arg__ __arg__. 
+  destruct_eq_dec __arg__ __arg__.
   rewrite H0 at 2.
   apply red_app.
   constructor.
@@ -731,6 +736,8 @@ Proof with eauto.
   apply proj1 in H3. subst. assumption.
 Qed.
 
+(* Now let's prove some stuff about pyret *)
+
 Fixpoint has_no_deltas (e : exp) : bool :=
   match e with
     | elam _ _ body =>
@@ -746,6 +753,36 @@ Fixpoint has_no_deltas (e : exp) : bool :=
     | ebool _ _ => false
     | ebrand _ => false
   end.
+
+Inductive sub_exp : exp -> exp -> Prop :=
+  | sub_eq : forall e e', e = e' -> sub_exp e e'
+  | sub_lam : forall bs a e e', sub_exp e e' -> sub_exp e (elam bs a e')
+  | sub_app1 : forall fn arg e, sub_exp e fn -> sub_exp e (eapp fn arg)
+  | sub_app2 : forall fn arg e, sub_exp e arg -> sub_exp e (eapp fn arg)
+  | sub_obj : forall bs vs e, Exists (fun e' => sub_exp e e') (values vs) ->
+                              sub_exp e (eobj bs vs)
+  | sub_delta1 : forall a e1 e2 e, sub_exp e e1 -> sub_exp e (edelta a e1 e2)
+  | sub_delta2 : forall a e1 e2 e, sub_exp e e2 -> sub_exp e (edelta a e1 e2)
+  | sub_getfield : forall a o e, sub_exp e o -> sub_exp e (egetfield a o).
+
+Example sub_exp_lam1 : sub_exp (ebool [] true) (elam [] __arg__ (ebool [] true)).
+Proof.
+  apply sub_lam. apply sub_eq. reflexivity.
+Qed.
+
+Example sub_exp_obj2 : ~ sub_exp (ebool [] true) (eobj [] [(f1, ebool [] false)]).
+Proof.
+  unfold not. intro.
+  inversion H. subst. inversion H0. subst. inversion H2. subst. inversion H1.
+  subst. inversion H0. subst. apply Exists_nil in H1. assumption.
+Qed.
+
+Theorem brands_unforgable : forall (b : brand) (e1 : exp) (e2 : exp) (p : exp) (r : exp),
+                              has_brand_rel e1 b -> ~ has_brand_rel e2 b ->
+                              sub_exp e1 p -> sub_exp e2 p -> multistep p r ->
+                              has_brand_rel r b -> r = e1.
+
+
 
 
 End Pyret.
