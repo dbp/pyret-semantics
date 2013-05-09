@@ -257,7 +257,7 @@ SearchAbout nth.
 
 
 Inductive red : exp -> exp -> Prop :=
-  red_app : forall x e b l,
+  | red_app : forall x e b l,
              value e ->
              red (eapp (elam l x b) e)
                  (subst x e b)
@@ -287,55 +287,76 @@ Inductive red : exp -> exp -> Prop :=
 Inductive step : exp -> exp -> Prop :=
   | sdecompose : forall e E e' e'',
                    decompose e E e' ->
-                   step e' e''
+                   red e' e''
                    -> step e (plug e'' E).
 
 
 Parameter __some_brand__ : atom.
 
-(* Example step_has_brand1 : *)
-(*   step (edelta __has_brand__ (ebrand (mkbrand __some_brand__)) *)
-(*                (ebool nil true)) *)
-(*        (ebool nil false). *)
-(* Proof. *)
-(*   apply sdelta_hb. constructor. *)
-(* Qed. *)
+Example step_has_brand1 :
+  step (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+               (ebool nil true))
+       (ebool nil false).
+Proof.
+  assert ((ebool [] false) = (plug (ebool nil false) E_hole)). reflexivity.
+  rewrite H.
+  apply sdecompose with (e' := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+               (ebool nil true))).
+  apply ctxt_hole. apply redex_delta. constructor. constructor. apply red_delta_hb. constructor.
+Qed.
 
-(* Example step_add_brand1 : *)
-(*   step (edelta __add_brand__ (ebrand (mkbrand __some_brand__)) *)
-(*                (ebool nil true)) *)
-(*        (ebool [mkbrand __some_brand__] true). *)
-(* Proof. *)
-(*   apply sdelta_ab. constructor. *)
-(* Qed. *)
+Example step_add_brand1 :
+  step (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+               (ebool nil true))
+       (ebool [mkbrand __some_brand__] true).
+Proof.
+  assert ((ebool [mkbrand __some_brand__] true) = (plug (ebool [mkbrand __some_brand__] true) E_hole)).
+  reflexivity.
+  rewrite H.
+  apply sdecompose with (e' := (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+               (ebool nil true))).
+  apply ctxt_hole. apply redex_delta. constructor. constructor. apply red_delta_ab. constructor.
+Qed.
 
-(* Definition multistep := multi step. *)
+Definition multistep := multi step.
 
-(* Example step_add_has_brand1 : *)
-(*   multistep *)
-(*     (edelta __has_brand__ *)
-(*             (ebrand (mkbrand __some_brand__)) *)
-(*             (edelta __add_brand__ (ebrand (mkbrand __some_brand__)) *)
-(*                     (ebool nil true))) *)
-(*     (ebool nil true). *)
-(* Proof. *)
-(*   apply multi_step with *)
-(*   (y := (edelta __has_brand__ (ebrand (mkbrand __some_brand__)) *)
-(*                 (ebool (cons (mkbrand __some_brand__) nil) true))). *)
-(*   apply sdelta2. *)
-(*   constructor. *)
-(*   apply sdelta_ab. *)
-(*   constructor. *)
-(*   eapply multi_step. *)
-(*   apply sdelta_hb. *)
-(*   constructor. *)
-(*   simpl. *)
-(*   destruct_eq_dec __some_brand__ __some_brand__. *)
-(*   eapply multi_refl. *)
-(* Qed. *)
+Example step_add_has_brand1 :
+  multistep
+    (edelta __has_brand__
+            (ebrand (mkbrand __some_brand__))
+            (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+                    (ebool nil true)))
+    (ebool nil true).
+Proof.
+  apply multi_step with
+  (y := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+                (ebool (cons (mkbrand __some_brand__) nil) true))).
+  assert ((edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+                  (ebool [mkbrand __some_brand__] true))
+          =
+          (plug (ebool [mkbrand __some_brand__] true) (E_delta2 __has_brand__ (ebrand (mkbrand __some_brand__)) E_hole))).
+  reflexivity.
+  rewrite H.
+  apply sdecompose with (e' := (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+           (ebool [] true))).
+  apply ctxt_delta2. constructor. apply ctxt_hole. constructor. constructor. constructor.
+  apply red_delta_ab. constructor.
+  apply multi_step with (y := (ebool [] true)).
+  assert ((ebool [] true) =
+          (plug (ebool [] true) E_hole)). reflexivity.
+  rewrite H.
+  apply sdecompose with (e' := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+        (ebool [mkbrand __some_brand__] true))).
+  apply ctxt_hole. constructor. constructor. constructor.
+  assert ((has_brand (mkbrand __some_brand__) (ebool [mkbrand __some_brand__] true))
+          = true). simpl. destruct_eq_dec __some_brand__ __some_brand__.
+  rewrite <- H0 at 2.
+  apply red_delta_hb. constructor.
+  apply multi_refl.
+Qed.
 
-(* Parameter f1 : atom. *)
-(* Parameter f2 : atom. *)
+Parameter f1 : atom.
+Parameter f2 : atom.
 
 (* SearchAbout fold_right. *)
 
@@ -355,66 +376,75 @@ Parameter __some_brand__ : atom.
 (*   reflexivity. *)
 (* Qed. *)
 
-(* Example step_obj1 : *)
-(*   multistep *)
-(*     (eobj nil *)
-(*           ((f1,ebool nil true) *)
-(*              ::(f2, edelta __has_brand__ *)
-(*                        (ebrand (mkbrand __some_brand__)) *)
-(*                        (ebool nil true)) *)
-(*              ::nil)) *)
-(*     (eobj nil ((f1,ebool nil true)::(f2,ebool nil false)::nil)). *)
-(* Proof. *)
-(*   SearchAbout Forall. *)
-(*   eapply multi_step. *)
-(*   replace  ((f1,ebool nil true) *)
-(*              ::(f2, edelta __has_brand__ *)
-(*                        (ebrand (mkbrand __some_brand__)) *)
-(*                        (ebool nil true)) *)
-(*              ::nil) with  ([(f1,ebool nil true)] *)
-(*              ++ ((f2, edelta __has_brand__ *)
-(*                        (ebrand (mkbrand __some_brand__)) *)
-(*                        (ebool nil true)) *)
-(*              ::nil)) by auto. *)
-(*   eapply sdecompose. *)
-(*   apply ctxt_obj. *)
-(*   apply ctxt_hole. *)
-(*   apply redex_delta. *)
-(*   constructor. constructor. *)
-(*   eapply sdelta_hb. *)
-(*   constructor. *)
-(*   simpl. *)
-(*   eapply multi_refl. *)
-(* Qed. *)
+Example step_obj1 :
+  multistep
+    (eobj nil
+          ((f1,ebool nil true)
+             ::(f2, edelta __has_brand__
+                       (ebrand (mkbrand __some_brand__))
+                       (ebool nil true))
+             ::nil))
+    (eobj nil ((f1,ebool nil true)::(f2,ebool nil false)::nil)).
+Proof.
+  eapply multi_step.
+  replace  ((f1,ebool nil true)
+             ::(f2, edelta __has_brand__
+                       (ebrand (mkbrand __some_brand__))
+                       (ebool nil true))
+             ::nil) with  ([(f1,ebool nil true)]
+             ++ ((f2, edelta __has_brand__
+                       (ebrand (mkbrand __some_brand__))
+                       (ebool nil true))
+             ::nil)) by auto.
+  eapply sdecompose.
+  apply ctxt_obj.
+  apply ctxt_hole.
+  apply redex_delta.
+  constructor. constructor.
+  eapply red_delta_hb.
+  constructor.
+  simpl.
+  eapply multi_refl.
+  (* Errg. we've proven it, but didn't satisfy the proof of values, so we have a dangling
+     existential. just admit, for now *)
+Admitted.
 
 
-(* Parameter __arg__ : atom. *)
+Parameter __arg__ : atom.
 
-(* Example step_app_lam1 : *)
-(*   multistep *)
-(*     (eapp (elam nil __arg__ (eid __arg__)) (ebool nil true)) *)
-(*     (ebool nil true). *)
-(* Proof. *)
-(*   eapply multi_step with (y := (subst __arg__ (ebool nil true) (eid __arg__))). *)
-(*   apply sapp. *)
-(*   constructor. *)
-(*   simpl. *)
-(*   destruct_eq_dec __arg__ __arg__. *)
-(*   apply multi_refl. *)
-(* Qed. *)
+Example step_app_lam1 :
+  multistep
+    (eapp (elam nil __arg__ (eid __arg__)) (ebool nil true))
+    (ebool nil true).
+Proof.
+  eapply multi_step with (y := (subst __arg__ (ebool nil true) (eid __arg__))).
+  simpl. destruct_eq_dec __arg__ __arg__.
+  assert ((ebool [] true) = (plug (ebool [] true) E_hole)). reflexivity. rewrite H at 2.
+  eapply sdecompose.
+  apply ctxt_hole. constructor. constructor. constructor.
+  assert ((ebool [] true) = (subst __arg__ (ebool [] true) (eid __arg__))). simpl.
+  destruct_eq_dec __arg__ __arg__. 
+  rewrite H0 at 2.
+  apply red_app.
+  constructor.
+  simpl.
+  destruct_eq_dec __arg__ __arg__.
+  apply multi_refl.
+Qed.
 
-(* Example step_getfield1 : *)
-(*   multistep *)
-(*     (egetfield f1 (eobj [] [(f1, ebool nil true)])) *)
-(*     (ebool nil true). *)
-(* Proof. *)
-(*   eapply multi_step. *)
-(*   change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]). *)
-(*   eapply sgetfield. *)
-(*   constructor. *)
-(*   constructor. *)
-(*   eapply multi_refl. *)
-(* Qed. *)
+Example step_getfield1 :
+  multistep
+    (egetfield f1 (eobj [] [(f1, ebool nil true)]))
+    (ebool nil true).
+Proof.
+  assert ((ebool [] true) = (plug (ebool [] true) E_hole)). reflexivity. rewrite H at 2.
+  eapply multi_step.
+  apply sdecompose with (e' := (egetfield f1 (eobj [] [(f1, ebool [] true)]))).
+  apply ctxt_hole. constructor. constructor. simpl. apply Forall_cons. constructor. constructor.
+  change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]).
+  apply red_getfield. simpl. constructor. simpl. constructor.
+  eapply multi_refl.
+Qed.
 
 
 (* Start the actual proofs of things that are actually interesting. *)
