@@ -2,6 +2,7 @@ Require Import Prelude.
 Require Import ListExt.
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Strings.String.
+Require Import ProofIrrelevance.
 
 Module Pyret (Import AtomM : ATOM) (Import String : STRING).
 
@@ -255,107 +256,104 @@ Fixpoint snoc {A:Type} (l:list A) (e:A) : list A :=
 SearchAbout nth.
 
 
+Inductive red : exp -> exp -> Prop :=
+  red_app : forall x e b l,
+             value e ->
+             red (eapp (elam l x b) e)
+                 (subst x e b)
+  | red_obj : forall bs vs a e e' es,
+                Forall value (values vs) ->
+                Forall (fun x => ~ value x) (map snd es) ->
+                ~ value e ->
+                red e e' ->
+                red (eobj bs (vs ++ (cons (a,e) es)))
+                    (eobj bs (vs ++ (cons (a,e') es)))
+  | red_getfield : forall bs vs es a e,
+                     Forall value (values vs) ->
+                     Forall value (values es) ->
+                     red (egetfield a (eobj bs (vs ++ (cons (a,e) es))))
+                         e
+  | red_delta_hb : forall e b,
+                     value e ->
+                     red (edelta __has_brand__ (ebrand b) e)
+                         (ebool nil (has_brand b e))
+  | red_delta_ab : forall e b,
+                     value e ->
+                     red (edelta __add_brand__ (ebrand b) e)
+                         (add_brand b e).
+  
+  
+
 Inductive step : exp -> exp -> Prop :=
   | sdecompose : forall e E e' e'',
                    decompose e E e' ->
                    step e' e''
-                   -> step e (plug e'' E)
-  | sapp : forall x e b l,
-             value e ->
-             step (eapp (elam l x b) e)
-                  (subst x e b)
-  | sobj : forall bs vs a e e' es,
-             Forall value (values vs) ->
-             Forall (fun x => ~ value x) (map snd es) ->
-             ~ value e ->
-             step e e' ->
-             step (eobj bs (vs ++ (cons (a,e) es)))
-                  (eobj bs (vs ++ (cons (a,e') es)))
-  | sgetfield : forall bs vs es a e,
-                  Forall value (values vs) ->
-                  Forall value (values es) ->
-                  step (egetfield a (eobj bs (vs ++ (cons (a,e) es))))
-                       e
-  | sdelta1 : forall a e1 e1' e2,
-               step e1 e1' ->
-               step (edelta a e1 e2) (edelta a e1' e2)
-  | sdelta2 : forall a e1 e2 e2',
-               value e1 ->
-               step e2 e2' ->
-               step (edelta a e1 e2) (edelta a e1 e2')
-  | sdelta_hb : forall e b,
-                  value e ->
-                  step (edelta __has_brand__ (ebrand b) e)
-                       (ebool nil (has_brand b e))
-  | sdelta_ab : forall e b,
-                  value e ->
-                  step (edelta __add_brand__ (ebrand b) e)
-                       (add_brand b e).
+                   -> step e (plug e'' E).
 
 
 Parameter __some_brand__ : atom.
 
-Example step_has_brand1 :
-  step (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
-               (ebool nil true))
-       (ebool nil false).
-Proof.
-  apply sdelta_hb. constructor.
-Qed.
+(* Example step_has_brand1 : *)
+(*   step (edelta __has_brand__ (ebrand (mkbrand __some_brand__)) *)
+(*                (ebool nil true)) *)
+(*        (ebool nil false). *)
+(* Proof. *)
+(*   apply sdelta_hb. constructor. *)
+(* Qed. *)
 
-Example step_add_brand1 :
-  step (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
-               (ebool nil true))
-       (ebool [mkbrand __some_brand__] true).
-Proof.
-  apply sdelta_ab. constructor.
-Qed.
+(* Example step_add_brand1 : *)
+(*   step (edelta __add_brand__ (ebrand (mkbrand __some_brand__)) *)
+(*                (ebool nil true)) *)
+(*        (ebool [mkbrand __some_brand__] true). *)
+(* Proof. *)
+(*   apply sdelta_ab. constructor. *)
+(* Qed. *)
 
-Definition multistep := multi step.
+(* Definition multistep := multi step. *)
 
-Example step_add_has_brand1 :
-  multistep
-    (edelta __has_brand__
-            (ebrand (mkbrand __some_brand__))
-            (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
-                    (ebool nil true)))
-    (ebool nil true).
-Proof.
-  apply multi_step with
-  (y := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
-                (ebool (cons (mkbrand __some_brand__) nil) true))).
-  apply sdelta2.
-  constructor.
-  apply sdelta_ab.
-  constructor.
-  eapply multi_step.
-  apply sdelta_hb.
-  constructor.
-  simpl.
-  destruct_eq_dec __some_brand__ __some_brand__.
-  eapply multi_refl.
-Qed.
+(* Example step_add_has_brand1 : *)
+(*   multistep *)
+(*     (edelta __has_brand__ *)
+(*             (ebrand (mkbrand __some_brand__)) *)
+(*             (edelta __add_brand__ (ebrand (mkbrand __some_brand__)) *)
+(*                     (ebool nil true))) *)
+(*     (ebool nil true). *)
+(* Proof. *)
+(*   apply multi_step with *)
+(*   (y := (edelta __has_brand__ (ebrand (mkbrand __some_brand__)) *)
+(*                 (ebool (cons (mkbrand __some_brand__) nil) true))). *)
+(*   apply sdelta2. *)
+(*   constructor. *)
+(*   apply sdelta_ab. *)
+(*   constructor. *)
+(*   eapply multi_step. *)
+(*   apply sdelta_hb. *)
+(*   constructor. *)
+(*   simpl. *)
+(*   destruct_eq_dec __some_brand__ __some_brand__. *)
+(*   eapply multi_refl. *)
+(* Qed. *)
 
-Parameter f1 : atom.
-Parameter f2 : atom.
+(* Parameter f1 : atom. *)
+(* Parameter f2 : atom. *)
 
-SearchAbout fold_right.
+(* SearchAbout fold_right. *)
 
-Lemma app_split : forall A : Type, forall x y : list A,
-                    x ++ y = fold_right cons y x.
-Proof.
-  intros.
-  induction x.
-  reflexivity.
-  simpl. rewrite IHx. reflexivity.
-Qed.
+(* Lemma app_split : forall A : Type, forall x y : list A, *)
+(*                     x ++ y = fold_right cons y x. *)
+(* Proof. *)
+(*   intros. *)
+(*   induction x. *)
+(*   reflexivity. *)
+(*   simpl. rewrite IHx. reflexivity. *)
+(* Qed. *)
 
-Lemma fold_cons : forall A : Type, forall x : A, forall y : list A,
-                    x :: y = fold_right cons y [x].
-Proof.
-  intros.
-  reflexivity.
-Qed.
+(* Lemma fold_cons : forall A : Type, forall x : A, forall y : list A, *)
+(*                     x :: y = fold_right cons y [x]. *)
+(* Proof. *)
+(*   intros. *)
+(*   reflexivity. *)
+(* Qed. *)
 
 (* Example step_obj1 : *)
 (*   multistep *)
@@ -390,33 +388,33 @@ Qed.
 (* Qed. *)
 
 
-Parameter __arg__ : atom.
+(* Parameter __arg__ : atom. *)
 
-Example step_app_lam1 :
-  multistep
-    (eapp (elam nil __arg__ (eid __arg__)) (ebool nil true))
-    (ebool nil true).
-Proof.
-  eapply multi_step with (y := (subst __arg__ (ebool nil true) (eid __arg__))).
-  apply sapp.
-  constructor.
-  simpl.
-  destruct_eq_dec __arg__ __arg__.
-  apply multi_refl.
-Qed.
+(* Example step_app_lam1 : *)
+(*   multistep *)
+(*     (eapp (elam nil __arg__ (eid __arg__)) (ebool nil true)) *)
+(*     (ebool nil true). *)
+(* Proof. *)
+(*   eapply multi_step with (y := (subst __arg__ (ebool nil true) (eid __arg__))). *)
+(*   apply sapp. *)
+(*   constructor. *)
+(*   simpl. *)
+(*   destruct_eq_dec __arg__ __arg__. *)
+(*   apply multi_refl. *)
+(* Qed. *)
 
-Example step_getfield1 :
-  multistep
-    (egetfield f1 (eobj [] [(f1, ebool nil true)]))
-    (ebool nil true).
-Proof.
-  eapply multi_step.
-  change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]).
-  eapply sgetfield.
-  constructor.
-  constructor.
-  eapply multi_refl.
-Qed.
+(* Example step_getfield1 : *)
+(*   multistep *)
+(*     (egetfield f1 (eobj [] [(f1, ebool nil true)])) *)
+(*     (ebool nil true). *)
+(* Proof. *)
+(*   eapply multi_step. *)
+(*   change [(f1, ebool nil true)] with ([] ++ [(f1, ebool nil true)]). *)
+(*   eapply sgetfield. *)
+(*   constructor. *)
+(*   constructor. *)
+(*   eapply multi_refl. *)
+(* Qed. *)
 
 
 (* Start the actual proofs of things that are actually interesting. *)
@@ -601,8 +599,7 @@ Proof.
     rewrite <- forall_map_comm. assumption. simpl. assumption. simpl. assumption.
   subst. apply app_inv_head in H3. inversion H3. subst. apply IHdecompose in H5.
   split. apply proj1 in H5. assumption. apply proj2 in H5. subst.
-  (* NOTE: How can I prove that are_vals and are_vals0 are the same? ie that Forall is one-to-one. *)
-  admit.
+  f_equal. apply proof_irrelevance.
   Case "ctxt_delta1".
   intros.
   inversion H0. inversion H1. apply values_dont_decompose with (E := E0) (e' := e') in H7.
@@ -619,11 +616,6 @@ Proof.
   reflexivity.
 Qed.
 
-
-
-Definition partial_function {X: Type} (R: relation X) :=
-  forall x y1 y2 : X, R x y1 -> R x y2 -> y1 = y2.
-
 Theorem pyret_step_deterministic : forall x y0 y1,
                         step x y0 ->
                         step x y1 -> y0 = y1.
@@ -636,40 +628,13 @@ Proof with eauto.
   intros y2 Hy2.
   inversion Hy2.
   SCase "sdecompose".
-  subst. assert (e' = e'0 /\ E0 = E1). apply decompose_det with (x := e) (C0 := E0) (C1 := E1) ; assumption.
+  subst. assert (e' = e'0 /\ E0 = E1). apply decompose_det with (x := e) (C0 := E0) (C1 := E1) ;
+                                       assumption.
   remember H2 as H2'.
   clear HeqH2'.
   apply proj1 in H2'.
   subst. apply IHHy1 in H1. subst.
-  apply proj2 in H2. subst. reflexivity. SearchAbout Forall.
-
-  assert (E0 = E1).
-  assert ()
-  apply decompose_det with (x := e) (C0 := E0) (C1 := E1).
-
-
-
-  subst.
-  inversion
-  apply plug_ok in H0. apply plug_ok in H.
-
-
-
-  intros.
-  rewrite plug_ok with (e := e).
-
-
-
-  Case "sapp".
-  inversion H0.
-
-  Case "elam".
-  apply values_dont_step in H. exfalso. assumption. constructor.
-  Case "eapp".
-  admit.
-  Case "eid".
-  inversion H. inversion H1.
-  (* Why can't I get a contradiction; there is clearly no way to step from eid *)
-
+  apply proj2 in H2. subst. reflexivity.
+Qed.
 
 End Pyret.
