@@ -738,21 +738,12 @@ Qed.
 
 (* Now let's prove some stuff about pyret *)
 
-Fixpoint has_no_deltas (e : exp) : bool :=
-  match e with
-    | elam _ _ body =>
-      has_no_deltas body
-    | eapp fn arg =>
-      orb (has_no_deltas fn) (has_no_deltas arg)
-    | eid x' =>
-      false
-    | edelta _ _ _ => true
-    | eobj _ vs =>
-      existsb (fun x => has_no_deltas (snd x)) vs
-    | egetfield a o => has_no_deltas o
-    | ebool _ _ => false
-    | ebrand _ => false
-  end.
+Inductive no_deltas : exp -> Prop :=
+  | nd_lam : forall l a body, no_deltas body -> no_deltas (elam l a body)
+  | nd_app : forall fn arg, no_deltas fn -> no_deltas arg -> no_deltas (eapp fn arg)
+  | nd_obj : forall l vs, Forall no_deltas (values vs) -> no_deltas (eobj l vs)
+  | nd_getfield : forall a o, no_deltas o -> no_deltas (egetfield a o)
+  | nd_bool : forall l b, no_deltas (ebool l b).
 
 Inductive sub_exp : exp -> exp -> Prop :=
   | sub_eq : forall e e', e = e' -> sub_exp e e'
@@ -778,9 +769,11 @@ Proof.
 Qed.
 
 Theorem brands_unforgable : forall (b : brand) (e1 : exp) (e2 : exp) (p : exp) (r : exp),
-                              has_brand_rel e1 b -> ~ has_brand_rel e2 b ->
+                              has_brand_rel e1 b -> no_deltas p ->
+                              (forall e, sub_exp e p -> ~ e = e1 -> ~ has_brand_rel e b) ->
                               sub_exp e1 p -> sub_exp e2 p -> multistep p r ->
                               has_brand_rel r b -> r = e1.
+
 
 
 
