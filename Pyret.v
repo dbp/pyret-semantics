@@ -39,11 +39,8 @@ Definition string := String.string.
 
 Parameter __check__ : atom.
 Parameter __brand__ : atom.
-Parameter __has_brand__ : atom.
-Parameter __add_brand__ : atom.
 
 Axiom check_brand_distinct : __check__ <> __brand__.
-Axiom has_add_distinct : __has_brand__ <> __add_brand__.
 
 (* Tests *)
 Goal (if Atom.eq_dec __check__ __check__ then 5 else 6) = 5.
@@ -56,6 +53,10 @@ destruct_eq_dec __check__ __brand__.
 Inductive brand : Set :=
   | mkbrand : atom -> brand.
 
+Inductive delta_op : Set :=
+  | has_brand_delta : delta_op
+  | add_brand_delta : delta_op.
+
 Unset Elimination Schemes.
 Inductive exp : Set :=
   | elam : list brand -> atom -> exp -> exp
@@ -64,7 +65,7 @@ Inductive exp : Set :=
   | eobj : list brand -> list (atom * exp) -> exp
   | ebool : list brand -> bool -> exp
   | ebrand : brand -> exp
-  | edelta : atom -> exp -> exp -> exp
+  | edelta : delta_op -> exp -> exp -> exp
   | egetfield : atom -> exp -> exp.
 Set Elimination Schemes.
 
@@ -87,7 +88,7 @@ Definition exp_ind :=
   (exp_rec_brand :
      forall (b : brand), P (ebrand b))
   (exp_rec_delta :
-     forall (a : atom) (e1 : exp) (e2 : exp), P e1 -> P e2 -> P (edelta a e1 e2))
+     forall (a : delta_op) (e1 : exp) (e2 : exp), P e1 -> P e2 -> P (edelta a e1 e2))
   (exp_rec_getfield :
      forall (a : atom) (e : exp), P e -> P (egetfield a e)) =>
 fix F (e : exp) : P e :=
@@ -130,11 +131,11 @@ Inductive E : Set :=
                    (vs : list (atom * exp))
                    (es : list (atom * exp)),
               (Forall value (values vs)) ->  atom -> E -> E
-  | E_delta1 : atom -> E -> exp -> E
-  | E_delta2 : atom -> exp -> E -> E.
+  | E_delta1 : delta_op -> E -> exp -> E
+  | E_delta2 : delta_op -> exp -> E -> E.
 
 Inductive ae : exp -> Prop :=
-  | redex_app  : forall e1 e2, value e1 -> value e2 -> ae (eapp e1 e2)
+  | redex_app : forall e1 e2, value e1 -> value e2 -> ae (eapp e1 e2)
   | redex_getfield : forall a e1, value e1 -> ae (egetfield a e1)
   | redex_delta : forall a e1 e2, value e1 -> value e2
                                   -> ae (edelta a e1 e2).
@@ -237,12 +238,12 @@ Fixpoint has_brand (b:brand) (e:exp) : bool :=
   brand_elem (brand_list e) b.
 
 Inductive has_brand_rel : exp -> brand -> Prop :=
-  | has_brand_obj : forall l b vs, In b l -> has_brand_rel (eobj l vs) b
+  | has_brand_obj : forall l b vs, Forall value (values vs) ->
+                                   In b l -> has_brand_rel (eobj l vs) b
   | has_brand_bool : forall l b v, In b l -> has_brand_rel (ebool l v) b
   | has_brand_lam : forall l a b body, In b l -> has_brand_rel (elam l a body) b.
 
 Fixpoint add_brand (b:brand) (e:exp) : exp :=
-  if has_brand b e then e else
   match e with
     | eobj l vs => eobj (cons b l) vs
     | ebool l v => ebool (cons b l) v
@@ -266,13 +267,6 @@ Inductive red : exp -> exp -> Prop :=
              value e ->
              red (eapp (elam l x b) e)
                  (subst x e b)
-  | red_obj : forall bs vs a e e' es,
-                Forall value (values vs) ->
-                Forall (fun x => ~ value x) (map snd es) ->
-                ~ value e ->
-                red e e' ->
-                red (eobj bs (vs ++ (cons (a,e) es)))
-                    (eobj bs (vs ++ (cons (a,e') es)))
   | red_getfield : forall bs vs es a e,
                      Forall value (values vs) ->
                      Forall value (values es) ->
@@ -282,11 +276,11 @@ Inductive red : exp -> exp -> Prop :=
                          e
   | red_delta_hb : forall e b,
                      value e ->
-                     red (edelta __has_brand__ (ebrand b) e)
+                     red (edelta has_brand_delta (ebrand b) e)
                          (ebool nil (has_brand b e))
   | red_delta_ab : forall e b,
                      value e ->
-                     red (edelta __add_brand__ (ebrand b) e)
+                     red (edelta add_brand_delta (ebrand b) e)
                          (add_brand b e).
 
 
@@ -301,26 +295,26 @@ Inductive step : exp -> exp -> Prop :=
 Parameter __some_brand__ : atom.
 
 Example step_has_brand1 :
-  step (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+  step (edelta has_brand_delta (ebrand (mkbrand __some_brand__))
                (ebool nil true))
        (ebool nil false).
 Proof.
   assert ((ebool [] false) = (plug (ebool nil false) E_hole)). reflexivity.
   rewrite H.
-  apply sdecompose with (e' := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+  apply sdecompose with (e' := (edelta has_brand_delta (ebrand (mkbrand __some_brand__))
                (ebool nil true))).
   apply ctxt_hole. apply redex_delta. constructor. constructor. apply red_delta_hb. constructor.
 Qed.
 
 Example step_add_brand1 :
-  step (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+  step (edelta add_brand_delta (ebrand (mkbrand __some_brand__))
                (ebool nil true))
        (ebool [mkbrand __some_brand__] true).
 Proof.
   assert ((ebool [mkbrand __some_brand__] true) = (plug (ebool [mkbrand __some_brand__] true) E_hole)).
   reflexivity.
   rewrite H.
-  apply sdecompose with (e' := (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+  apply sdecompose with (e' := (edelta add_brand_delta (ebrand (mkbrand __some_brand__))
                (ebool nil true))).
   apply ctxt_hole. apply redex_delta. constructor. constructor. apply red_delta_ab. constructor.
 Qed.
@@ -329,22 +323,22 @@ Definition multistep := multi step.
 
 Example step_add_has_brand1 :
   multistep
-    (edelta __has_brand__
+    (edelta has_brand_delta
             (ebrand (mkbrand __some_brand__))
-            (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+            (edelta add_brand_delta (ebrand (mkbrand __some_brand__))
                     (ebool nil true)))
     (ebool nil true).
 Proof.
   apply multi_step with
-  (y := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+  (y := (edelta has_brand_delta (ebrand (mkbrand __some_brand__))
                 (ebool (cons (mkbrand __some_brand__) nil) true))).
-  assert ((edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+  assert ((edelta has_brand_delta (ebrand (mkbrand __some_brand__))
                   (ebool [mkbrand __some_brand__] true))
           =
-          (plug (ebool [mkbrand __some_brand__] true) (E_delta2 __has_brand__ (ebrand (mkbrand __some_brand__)) E_hole))).
+          (plug (ebool [mkbrand __some_brand__] true) (E_delta2 has_brand_delta (ebrand (mkbrand __some_brand__)) E_hole))).
   reflexivity.
   rewrite H.
-  apply sdecompose with (e' := (edelta __add_brand__ (ebrand (mkbrand __some_brand__))
+  apply sdecompose with (e' := (edelta add_brand_delta (ebrand (mkbrand __some_brand__))
            (ebool [] true))).
   apply ctxt_delta2. constructor. apply ctxt_hole. constructor. constructor. constructor.
   apply red_delta_ab. constructor.
@@ -352,7 +346,7 @@ Proof.
   assert ((ebool [] true) =
           (plug (ebool [] true) E_hole)). reflexivity.
   rewrite H.
-  apply sdecompose with (e' := (edelta __has_brand__ (ebrand (mkbrand __some_brand__))
+  apply sdecompose with (e' := (edelta has_brand_delta (ebrand (mkbrand __some_brand__))
         (ebool [mkbrand __some_brand__] true))).
   apply ctxt_hole. constructor. constructor. constructor.
   assert ((has_brand (mkbrand __some_brand__) (ebool [mkbrand __some_brand__] true))
@@ -387,7 +381,7 @@ Example step_obj1 :
   multistep
     (eobj nil
           ((f1,ebool nil true)
-             ::(f2, edelta __has_brand__
+             ::(f2, edelta has_brand_delta
                        (ebrand (mkbrand __some_brand__))
                        (ebool nil true))
              ::nil))
@@ -395,11 +389,11 @@ Example step_obj1 :
 Proof.
   eapply multi_step.
   replace  ((f1,ebool nil true)
-             ::(f2, edelta __has_brand__
+             ::(f2, edelta has_brand_delta
                        (ebrand (mkbrand __some_brand__))
                        (ebool nil true))
              ::nil) with  ([(f1,ebool nil true)]
-             ++ ((f2, edelta __has_brand__
+             ++ ((f2, edelta has_brand_delta
                        (ebrand (mkbrand __some_brand__))
                        (ebool nil true))
              ::nil)) by auto.
@@ -481,43 +475,41 @@ Qed.
 
 (* My lemmas start *)
 
+Lemma map_cons : forall (A B : Type) (x : A) (l : list A) (f : A -> B),
+                   map f (x::l) = (f x) :: (map f l).
+Proof. intros. auto. Qed.
+
+Lemma red_ae : forall e e', red e e' -> ae e.
+Proof.
+  intros.
+  inversion H; try (repeat constructor || assumption).
+  Case "egetfield".
+  subst. SearchAbout app. rewrite map_app. rewrite forall_app.
+  split. assumption. rewrite map_cons. simpl. constructor. assumption. assumption.
+Qed.
+
 Lemma values_dont_decompose : forall e E e', value e -> ~ decompose e E e'.
 Proof.
   intros. unfold not. intro.
   (* This is absolute insanity. the whole point is that active expressions are not compatible with *)
   (* values, but I can't seem to get coq to recognize that in a non-heinous manner.  *)
   induction H0.
-  inversion H. inversion H0. subst. inversion H4. subst.
-  inversion H3. subst. inversion H4. inversion H0. subst. inversion H5. subst. inversion H4.
-  subst. inversion H5. inversion H0. subst. inversion H4. subst. inversion H3. subst. inversion H4.
-  inversion H0. subst. inversion H4. subst. inversion H3. subst. inversion H4. inversion H.
-  inversion H. inversion H.
-  (* Object case sucks! *)
-  inversion H. inversion H0. subst. SearchAbout Forall. rewrite forall_map_comm in H2.
+  inversion H.
+  Case "ebool".
+  inversion H0. subst. inversion H4. subst.
+  inversion H3. subst. inversion H4.
+  Case "eobj". subst. inversion H0.
+  Case "elam". subst. inversion H0.
+  Case "ebrand". subst. inversion H0.
+  Case "eapp". inversion H.
+  Case "eapp(?)". inversion H.
+  Case "egetfield". inversion H.
+  Case "eobj".
+  inversion H. subst. rewrite forall_map_comm in H2.
   rewrite forall_app in H2. apply proj2 in H2.
-  SearchAbout Forall.
-  inversion H2. simpl in H5. apply IHdecompose. assumption.
-  (* apparently I don't know how to make the repeat tactic work. *)
-(*      repeat (this stuff) only does it one time. copy-paste works 6 times.*)
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  rewrite forall_map_comm in H2.
-  rewrite forall_app in H2. apply proj2 in H2.
-  inversion H2. simpl in H10. apply IHdecompose. assumption.
-  inversion H. inversion H.
+  inversion H2. simpl in H4. apply IHdecompose. assumption.
+  Case "edelta". inversion H.
+  Case "edelta". inversion H.
 Qed.
 
 Theorem values_dont_step : forall e e', value e -> ~ step e e'.
@@ -685,16 +677,6 @@ Proof.
   induction H.
   Case "red_app".
   intros. inversion H0. reflexivity.
-  Case "red_obj".
-  intros. inversion H3. subst.
-  assert (vs0 = vs).
-  apply forall_head with (P := fun p : atom*exp => value ((@snd atom exp) p)) in H5.
-  apply proj1 in H5. assumption. intros. destruct x. apply values_dec.
-  unfold values in H6. rewrite <- forall_map_comm. assumption.
-  unfold values in H. rewrite <- forall_map_comm. assumption. simpl. assumption. simpl. assumption.
-  subst. apply app_inv_head in H5. inversion H5. subst. f_equal.
-  assert (e' = e'0).
-  apply IHred. assumption. subst. reflexivity.
   Case "red_getfield".
   intros. inversion H3. subst. SearchAbout sumbool.
   apply forall_head with (P := fun p : atom*exp => ~ (a = (fst p))) in H6.
@@ -709,10 +691,9 @@ Proof.
   simpl. auto.
   simpl. auto.
   Case "red_delta_hb".
-  intros. inversion H0. subst. reflexivity. subst. exfalso. symmetry in H1.
-  apply has_add_distinct in H1. assumption.
+  intros. inversion H0. subst. reflexivity.
   Case "red_delta_ab".
-  intros. inversion H0. subst. exfalso. apply has_add_distinct in H1. assumption. reflexivity.
+  intros. inversion H0. subst. reflexivity.
 Qed.
 
 Theorem pyret_step_deterministic : forall x y0 y1,
@@ -768,12 +749,115 @@ Proof.
   subst. inversion H0. subst. apply Exists_nil in H1. assumption.
 Qed.
 
+(* Is this the only way of doing this? seems crazy *)
+Inductive not_lam : exp -> Prop :=
+  | not_lam_app : forall fn arg, not_lam (eapp fn arg)
+  | not_lam_id : forall i, not_lam (eid i)
+  | not_lam_obj : forall l vs, not_lam (eobj l vs)
+  | not_lam_bool : forall l v, not_lam (ebool l v)
+  | not_lam_brand : forall b, not_lam (ebrand b)
+  | not_lam_delta : forall a e1 e2, not_lam (edelta a e1 e2)
+  | not_lam_getfield : forall a o, not_lam (egetfield a o).
+
+Inductive not_obj : exp -> Prop :=
+  | not_obj_lam : forall l a b, not_obj (elam l a b)
+  | not_obj_app : forall fn arg, not_obj (eapp fn arg)
+  | not_obj_id : forall i, not_obj (eid i)
+  | not_obj_bool : forall l v, not_obj (ebool l v)
+  | not_obj_brand : forall b, not_obj (ebrand b)
+  | not_obj_delta : forall a e1 e2, not_obj (edelta a e1 e2)
+  | not_obj_getfield : forall a o, not_obj (egetfield a o).
+
+Inductive not_brand : exp -> Prop :=
+  | not_brand_lam : forall l a b, not_brand (elam l a b)
+  | not_brand_app : forall fn arg, not_brand (eapp fn arg)
+  | not_brand_id : forall i, not_brand (eid i)
+  | not_brand_obj : forall l vs, not_brand (eobj l vs)
+  | not_brand_bool : forall l v, not_brand (ebool l v)
+  | not_brand_delta : forall a e1 e2, not_brand (edelta a e1 e2)
+  | not_brand_getfield : forall a o, not_brand (egetfield a o).
+
+Inductive stuck : exp -> Prop :=
+  (* First the non-recursive cases *)
+  | stuck_app : forall e a, not_lam e -> stuck (eapp e a)
+  | stuck_id : forall a, stuck (eid a)
+  | stuck_getfield : forall a e, not_obj e -> stuck (egetfield a e)
+  | stuck_delta_hb : forall e b, not_brand b -> stuck (edelta has_brand_delta b e)
+  | stuck_delta_ab : forall e b, not_brand b -> stuck (edelta add_brand_delta b e)
+  (* Now the recursive ones *)
+  | stuck_lam : forall l a body, stuck body -> stuck (elam l a body)
+  | stuck_app1 : forall fn arg, stuck fn -> stuck (eapp fn arg)
+  | stuck_app2 : forall fn arg, stuck arg -> stuck (eapp fn arg)
+  | stuck_obj : forall l vs, Exists stuck (values vs) -> stuck (eobj l vs)
+  | stuck_delta1 : forall a e1 e2, stuck e1 -> stuck (edelta a e1 e2)
+  | stuck_delta2 : forall a e1 e2, stuck e2 -> stuck (edelta a e1 e2)
+  | stuck_getfieldr : forall a o, stuck o -> stuck (egetfield a o).
+
+Theorem pyret_progress : forall e, value e \/ stuck e \/ (exists e', step e e').
+Proof.
+  intros.
+  induction e.
+  Case "elam". left. constructor.
+  Case "eapp". inversion IHe1.
+  SCase "value e1". inversion H; try (right; left;  constructor; constructor).
+  SSCase "elam".
+  inversion IHe2.
+  SSSCase "value e2".
+  right. right. exists (subst xs e2 b).
+  assert (plug (subst xs e2 b) E_hole = subst xs e2 b). auto. rewrite <- H2.
+  apply sdecompose with (e' := (eapp (elam bs xs b) e2)). constructor. constructor. constructor.
+  assumption. constructor. assumption.
+  inversion H1.
+  SSSCase "stuck e2".
+  right. left. apply stuck_app2. assumption.
+  SSSCase "step e2".
+  inversion H2. right. right. inversion H3. subst. exists (plug e'' (E_app2 (elam bs xs b) E0)).
+  apply sdecompose with (e' := e'). constructor. constructor. assumption. assumption.
+  inversion H.
+  SCase "stuck e1". right. left. apply stuck_app1. assumption.
+  SCase "step e1".
+  inversion H0. right. right. inversion H1. subst. exists (plug e'' (E_app1 E0 e2)).
+  apply sdecompose with (e' := e'). constructor. assumption. assumption.
+  Case "eid". right. left. constructor.
+  Case "eobj".
+  (* This is the hard case *) admit.
+  Case "ebool". left. constructor.
+  Case "ebrand". left. constructor.
+  Case "edelta".
+  inversion IHe1.
+  inversion H; try solve [right; left; destruct a; repeat constructor].
+  SCase "ebrand". inversion IHe2. right. right. destruct a.
+  admit. (* This is hard because of decidability of brand equality *)
+  inversion H1.
+  SSCase "ebool".
+  exists (plug (ebool (b::l) b0) E_hole). eapply sdecompose. constructor.
+  constructor. constructor. constructor. assert (ebool (b::l) b0 = add_brand b (ebool l b0)).
+
+
+  constructor.
+  assert (plug x (E_app2 (elam bs xs b) E_hole) = (eapp (elam bs xs b) x)). constructor.
+  rewrite <- H4.
+
+
+  apply sdecompose with (e' := e2). constructor. constructor. constructor.
+
+
+  inversion H3. inversion H5. assumption. subst. constructor. apply decompose_ae in H9.
+  inversion H9. subst.
+  apply red_ae with (e' := x). inversion H3. subst.
+
+  SSCase "eobj".
+
+
 Theorem brands_unforgable : forall (b : brand) (e1 : exp) (e2 : exp) (p : exp) (r : exp),
                               has_brand_rel e1 b -> no_deltas p ->
                               (forall e, sub_exp e p -> ~ e = e1 -> ~ has_brand_rel e b) ->
                               sub_exp e1 p -> sub_exp e2 p -> multistep p r ->
                               has_brand_rel r b -> r = e1.
 
+
+(* TODO: progress (untyped) - define stuck states, forall e e', e <> e' ->
+                                                   value e \/ stuck e \/ step e e'*)
 
 
 
