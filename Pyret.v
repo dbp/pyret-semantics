@@ -785,7 +785,6 @@ Inductive stuck : exp -> Prop :=
   | stuck_delta_hb : forall e b, not_brand b -> stuck (edelta has_brand_delta b e)
   | stuck_delta_ab : forall e b, not_brand b -> stuck (edelta add_brand_delta b e)
   (* Now the recursive ones *)
-  | stuck_lam : forall l a body, stuck body -> stuck (elam l a body)
   | stuck_app1 : forall fn arg, stuck fn -> stuck (eapp fn arg)
   | stuck_app2 : forall fn arg, stuck arg -> stuck (eapp fn arg)
   | stuck_obj : forall l vs, Exists stuck (values vs) -> stuck (eobj l vs)
