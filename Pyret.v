@@ -243,7 +243,7 @@ Inductive has_brand_rel : exp -> brand -> Prop :=
   | has_brand_bool : forall l b v, In b l -> has_brand_rel (ebool l v) b
   | has_brand_lam : forall l a b body, In b l -> has_brand_rel (elam l a body) b.
 
-Fixpoint add_brand (b:brand) (e:exp) : exp :=
+Fixpoint add_brand (b:brand) (e:exp) {struct e} : exp :=
   match e with
     | eobj l vs => eobj (cons b l) vs
     | ebool l v => ebool (cons b l) v
@@ -826,11 +826,14 @@ Proof.
   inversion IHe1.
   inversion H; try solve [right; left; destruct a; repeat constructor].
   SCase "ebrand". inversion IHe2. right. right. destruct a.
-  admit. (* This is hard because of decidability of brand equality *)
+  repeat econstructor; auto.
   inversion H1.
   SSCase "ebool".
   exists (plug (ebool (b::l) b0) E_hole). eapply sdecompose. constructor.
   constructor. constructor. constructor. assert (ebool (b::l) b0 = add_brand b (ebool l b0)).
+  reflexivity. rewrite H3. constructor. constructor.
+  SSCase "eobj".
+  (* Here *)
 
 
   constructor.
