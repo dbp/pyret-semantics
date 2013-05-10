@@ -243,7 +243,7 @@ Inductive has_brand_rel : exp -> brand -> Prop :=
   | has_brand_bool : forall l b v, In b l -> has_brand_rel (ebool l v) b
   | has_brand_lam : forall l a b body, In b l -> has_brand_rel (elam l a body) b.
 
-Fixpoint add_brand (b:brand) (e:exp) {struct e} : exp :=
+Definition add_brand (b:brand) (e:exp) : exp :=
   match e with
     | eobj l vs => eobj (cons b l) vs
     | ebool l v => ebool (cons b l) v
