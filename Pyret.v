@@ -777,6 +777,14 @@ Inductive not_brand : exp -> Prop :=
   | not_brand_delta : forall a e1 e2, not_brand (edelta a e1 e2)
   | not_brand_getfield : forall a o, not_brand (egetfield a o).
 
+Inductive not_brandable : exp -> Prop :=
+  | not_brandable_brand : forall b, not_brandable (ebrand b)
+  | not_brandable_app : forall fn arg, not_brandable (eapp fn arg)
+  | not_brandable_id : forall i, not_brandable (eid i)
+  | not_brandable_delta : forall a e1 e2, not_brandable (edelta a e1 e2)
+  | not_brandable_getfield : forall a o, not_brandable (egetfield a o).
+
+
 Inductive stuck : exp -> Prop :=
   (* First the non-recursive cases *)
   | stuck_app : forall e a, not_lam e -> stuck (eapp e a)
@@ -784,6 +792,7 @@ Inductive stuck : exp -> Prop :=
   | stuck_getfield : forall a e, not_obj e -> stuck (egetfield a e)
   | stuck_delta_hb : forall e b, not_brand b -> stuck (edelta has_brand_delta b e)
   | stuck_delta_ab : forall e b, not_brand b -> stuck (edelta add_brand_delta b e)
+  | stuck_delta_brandable : forall e b, not_brandable e -> stuck (edelta add_brand_delta b e)
   (* Now the recursive ones *)
   | stuck_app1 : forall fn arg, stuck fn -> stuck (eapp fn arg)
   | stuck_app2 : forall fn arg, stuck arg -> stuck (eapp fn arg)
@@ -791,6 +800,35 @@ Inductive stuck : exp -> Prop :=
   | stuck_delta1 : forall a e1 e2, stuck e1 -> stuck (edelta a e1 e2)
   | stuck_delta2 : forall a e1 e2, stuck e2 -> stuck (edelta a e1 e2)
   | stuck_getfieldr : forall a o, stuck o -> stuck (egetfield a o).
+
+Lemma forall_tail : forall (A:Type) (x:A) (l:list A) P,
+                      Forall P (x::l) -> Forall P l.
+Proof.
+  intros.
+  inversion H. assumption.
+Qed.
+
+
+Lemma fst_split_foo : forall (A B:Type) (x:list (A*B)) (xa:A) (xb:B),
+  fst (let (g, d) := split x in (xa :: g, xb :: d)) = xa :: (fst (split x)).
+Proof.
+  intros.
+  (* How do I prove? I don't even know how let works... *)
+  admit.
+Qed.
+
+(* Adapted from ListExt to also give proof that this is first *)
+Theorem in_split_fst_first : forall A B a (l:list (A*B)), In a (fst (split l)) -> exists l1, exists l2, exists b, l = l1++(a,b)::l2 /\ ~ In a (fst (split l1)).
+Proof.
+  induction l; intros; simpl... inversion H. destruct a0 as (xa, xb). rewrite fst_split_cons in H.
+  inversion H. exists []; exists l; exists xb... subst; simpl; split. reflexivity. unfold not. auto.
+  (* clear H. *) assert (H1 := IHl H0). inversion_clear H1. inversion_clear H2. inversion_clear H1.
+  (* TODO *)
+
+  exists ((xa,xb)::x); exists x0; exists x1. subst; simpl. inversion H1. subst. split. reflexivity. rewrite fst_split_foo.
+Qed.
+
+
 
 Theorem pyret_progress : forall e, value e \/ stuck e \/ (exists e', step e e').
 Proof.
@@ -824,15 +862,64 @@ Proof.
   Case "ebrand". left. constructor.
   Case "edelta".
   inversion IHe1.
+  SCase "value e1".
   inversion H; try solve [right; left; destruct a; repeat constructor].
-  SCase "ebrand". inversion IHe2. right. right. destruct a.
+  SSCase "ebrand". inversion IHe2.
+  SSSCase "value e2".
+  destruct a.
+  right. right.
   repeat econstructor; auto.
   inversion H1.
-  SSCase "ebool".
+  SSSSCase "ebool".
+  right. right.
   exists (plug (ebool (b::l) b0) E_hole). eapply sdecompose. constructor.
   constructor. constructor. constructor. assert (ebool (b::l) b0 = add_brand b (ebool l b0)).
   reflexivity. rewrite H3. constructor. constructor.
+  SSSSCase "eobj". right. right.
+  exists (plug (eobj (b::l) fs) E_hole). eapply sdecompose. repeat constructor. assumption. repeat constructor. assumption.
+  SSSSCase "elam". right. right.
+  exists (plug (elam (b::bs) xs b0) E_hole). eapply sdecompose.
+  repeat constructor. constructor. constructor. (* weird *)
+  SSSSCase "ebrand". right. left. apply stuck_delta_brandable. constructor.
+  inversion H1.
+  SSSCase "stuck e2". right. left. apply stuck_delta2. assumption.
+  SSSCase "step e2". right. right. inversion H2. inversion H3.
+  exists (plug e'' (E_delta2 a (ebrand b) E0)).
+  apply sdecompose with (e' := e'). repeat constructor.
+  assumption. assumption.
+  inversion H.
+  SCase "stuck e1".
+  right. left. apply stuck_delta1. assumption.
+  SCase "step e1".
+  right. right. inversion H0. inversion H1.
+  exists (plug e'' (E_delta1 a E0 e2)). apply sdecompose with (e' := e').
+  constructor. assumption. assumption.
+  Case "getfield".
+  inversion IHe.
+  SCase "value e". inversion H.
+  try solve [right; left; repeat constructor].
   SSCase "eobj".
+  destruct (in_dec AtomM.atom_eq_dec a (map fst fs)).
+  right. right.
+  (* A lot of setup to get the actual value from the object *)
+
+
+  assert (map fst fs = fst (split fs)).
+  apply map_fst_fst_split.
+  rewrite H2 in i.
+  destruct (in_split_fst a fs i).
+  inversion H3. inversion H4.
+  exists (plug x1 E_hole).
+  apply sdecompose with (e' := (egetfield a (eobj l fs))).
+  repeat constructor. assumption. rewrite H5.
+  remember H0 as H6. clear HeqH6. rewrite H5 in H6.
+  rewrite map_app in H6. apply forall_app in H6. inversion H6.
+  apply red_getfield. assumption. rewrite map_cons in H8.
+  apply forall_tail in H8. assumption.
+
+
+
+
   (* Here *)
 
 
