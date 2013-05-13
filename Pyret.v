@@ -111,6 +111,7 @@ fix F (e : exp) : P e :=
   | egetfield a e => exp_rec_getfield a e (F e)
   end.
 
+
 Definition values l := map (@snd atom exp) l.
 
 Inductive value : exp -> Prop :=
@@ -726,13 +727,30 @@ Inductive no_deltas : exp -> Prop :=
   | nd_getfield : forall a o, no_deltas o -> no_deltas (egetfield a o)
   | nd_bool : forall l b, no_deltas (ebool l b).
 
+Fixpoint exp_size (e: exp) : nat :=
+  match e with
+    | elam _ _ b => S (exp_size b)
+    | eapp f a => S (exp_size f + exp_size a)
+    | eid _ => 1
+    | eobj _ fs => S ((fix f aes :=
+      match aes with
+        | nil => 0
+        | (_, e)::aes' => exp_size e + f aes'
+      end) fs)
+    | ebool _ _ => 1
+    | ebrand _ => 1
+    | edelta _ e1 e2 => S (exp_size e1 + exp_size e2)
+    | egetfield _ o => S (exp_size o)
+  end.
+
+
 Inductive sub_exp : exp -> exp -> Prop :=
   | sub_eq : forall e e', e = e' -> sub_exp e e'
   | sub_lam : forall bs a e e', sub_exp e e' -> sub_exp e (elam bs a e')
   | sub_app1 : forall fn arg e, sub_exp e fn -> sub_exp e (eapp fn arg)
   | sub_app2 : forall fn arg e, sub_exp e arg -> sub_exp e (eapp fn arg)
-  | sub_obj : forall bs vs e, Exists (fun e' => sub_exp e e') (values vs) ->
-                              sub_exp e (eobj bs vs)
+  | sub_obj : forall bs vs vs' a e e', sub_exp e e' ->
+                                    sub_exp e (eobj bs (vs++(a,e')::vs'))
   | sub_delta1 : forall a e1 e2 e, sub_exp e e1 -> sub_exp e (edelta a e1 e2)
   | sub_delta2 : forall a e1 e2 e, sub_exp e e2 -> sub_exp e (edelta a e1 e2)
   | sub_getfield : forall a o e, sub_exp e o -> sub_exp e (egetfield a o).
@@ -742,12 +760,44 @@ Proof.
   apply sub_lam. apply sub_eq. reflexivity.
 Qed.
 
+Lemma app_cons_neq_nil : forall (A:Type) (l1:list A) (e:A) (l2:list A), l1 ++ e::l2 <> [].
+Proof.
+  intros. unfold not. intro. induction l1. simpl in H. inversion H. simpl in H. inversion H.
+Qed.
+
+
 Example sub_exp_obj2 : ~ sub_exp (ebool [] true) (eobj [] [(f1, ebool [] false)]).
 Proof.
   unfold not. intro.
-  inversion H. subst. inversion H0. subst. inversion H2. subst. inversion H1.
-  subst. inversion H0. subst. apply Exists_nil in H1. assumption.
+  inversion H.
+  Case "eq". inversion H0.
+  Case "obj".
+  destruct vs. simpl in H3. inversion H2; subst; inversion H3. simpl in H3. inversion H3.
+  apply app_cons_neq_nil in H6. assumption.
 Qed.
+
+Lemma sub_exp_trans : forall e e' e'', sub_exp e e' -> sub_exp e' e'' -> sub_exp e e''.
+Proof.
+  intros.
+  generalize dependent e.
+  induction H0.
+  Case "eq". intro. subst. auto.
+  Case "lam".
+  intros. apply IHsub_exp in H. apply sub_lam. assumption.
+  Case "app1".
+  intros. apply IHsub_exp in H. apply sub_app1. assumption.
+  Case "app2".
+  intros. apply IHsub_exp in H. apply sub_app2. assumption.
+  Case "obj".
+  intros. apply IHsub_exp in H. apply sub_obj. assumption.
+  Case "delta1".
+  intros. apply IHsub_exp in H. apply sub_delta1. assumption.
+  Case "delta2".
+  intros. apply IHsub_exp in H. apply sub_delta2. assumption.
+  Case "getfield".
+  intros. apply IHsub_exp in H. apply sub_getfield. assumption.
+Qed.
+
 
 (* Is this the only way of doing this? seems crazy *)
 Inductive not_lam : exp -> Prop :=
@@ -853,7 +903,7 @@ Qed.
 Lemma app_head : forall (A:Type) (x:A) (l:list A), x::l = [x] ++ l.
 Proof. intros. auto. Qed.
 
-(* This proof is long, but it's not terrible complicated; the basic idea is to either
+(* This proof is long, but it's not terrible complicated; the basic idea is to
    short-circuit with either a value or something that is obviously stuck, or invert
    the other options until we either a. find something stuck or b. show the step.
    The step is a two step inversion - as we need to get the reduction and the context
@@ -995,12 +1045,73 @@ Proof.
   apply sdecompose with (e' := e'). repeat constructor. assumption. assumption.
 Qed.
 
+Theorem pyret_progress_multi : forall e, exists e', multistep e e' /\ (value e' \/ stuck e').
+Proof.
+  intro.
+  (* I want to write the following proof, but I don't know how to: *)
+  (* fix pf e => assert (H := pyret_progress e).
+                 inversion H.
+                 Case "value". split. apply multi_refl. left. assumption.
+                 Case "stuck". split. apply multi_refl. right. assumption.
+                 Case "step". split. inversion H0. pf e' *)
+  admit.
+Qed.
 
-Theorem brands_unforgable : forall (b : brand) (e1 : exp) (e2 : exp) (p : exp) (r : exp),
-                              has_brand_rel e1 b -> no_deltas p ->
-                              (forall e, sub_exp e p -> ~ e = e1 -> ~ has_brand_rel e b) ->
-                              sub_exp e1 p -> sub_exp e2 p -> multistep p r ->
-                              has_brand_rel r b -> r = e1.
+Lemma sub_exps_nested : forall e e' e'', sub_exp e e' -> sub_exp e e'' -> sub_exp e' e'' ->
+                                         e' <> e'' -> e <> e''.
+Proof.
+  intros.
+  admit.
+Qed.
 
+Lemma step_preserves_no_deltas : forall e e', no_deltas e -> step e e' -> no_deltas e'.
+Proof.
+  admit.
+Qed.
 
-End Pyret.
+Lemma step_wo_delta_preserves_brands : forall x y b,
+                                         no_deltas x ->
+                                         ~ has_brand_rel x b ->
+                                         step x y -> ~ has_brand_rel y b.
+Proof.
+  admit.
+Qed.
+
+Theorem brands_unforgable : forall (b : brand) (e : exp) (p : exp) (r : exp),
+                              has_brand_rel e b -> no_deltas p ->
+                              (forall x, sub_exp x p -> ~ x = e -> ~ has_brand_rel x b) ->
+                              sub_exp e p -> multistep p r ->
+                              has_brand_rel r b -> r = e.
+Proof.
+  intros.
+  induction H3.
+  Case "p = r". subst. inversion H2.
+  SCase "e = r". symmetry. assumption.
+  SCase "e = elam". subst.
+  inversion H4. subst.
+  (* This really wierd structuring is because the proofs were being completed without adding *)
+  (* givens... which was really strange. *)
+  assert (e' <> (elam bs a e')).
+    unfold not. intro. assert (exp_size e' = exp_size (elam bs a e')). rewrite H5 at 1. reflexivity.
+    simpl in H6. omega.
+  assert (e' = e'). reflexivity.
+  assert (e <> elam bs a e').
+  exact (sub_exps_nested e e' (elam bs a e') H3 H2 (sub_lam bs a e' e' (sub_eq e' e' H6)) H5).
+
+  exfalso.
+  unfold not in H1 at 2. apply H1 with (x := (elam bs a e')).
+  constructor. reflexivity. unfold not. intro. symmetry in H8. contradiction.
+  assumption.
+  SCase "e = eapp1". subst. inversion H4.
+  SCase "e = eapp2". subst. inversion H4.
+  SCase "e = eobj". subst. admit.
+  SCase "e = edelta1". subst. inversion H0.
+  SCase "e = edelta2". subst. inversion H0.
+  SCase "e = egetfield". subst. inversion H4.
+  Case "p steps".
+  apply IHmulti.
+  apply step_preserves_no_deltas with (e := x). assumption. assumption.
+  intros. apply step_wo_delta_preserves_brands with (x := x).
+  assumption. apply H1. constructor. reflexivity. (* grr... x could equal e *)
+
+end Pyret.
