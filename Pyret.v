@@ -244,6 +244,7 @@ Inductive has_brand_rel : exp -> brand -> Prop :=
   | has_brand_bool : forall l b v, In b l -> has_brand_rel (ebool l v) b
   | has_brand_lam : forall l a b body, In b l -> has_brand_rel (elam l a body) b.
 
+
 Definition add_brand (b:brand) (e:exp) : exp :=
   match e with
     | eobj l vs => eobj (cons b l) vs
@@ -799,6 +800,7 @@ Proof.
 Qed.
 
 
+
 (* Is this the only way of doing this? seems crazy *)
 Inductive not_lam : exp -> Prop :=
   | not_lam_app : forall fn arg, not_lam (eapp fn arg)
@@ -1045,17 +1047,82 @@ Proof.
   apply sdecompose with (e' := e'). repeat constructor. assumption. assumption.
 Qed.
 
-Theorem pyret_progress_multi : forall e, exists e', multistep e e' /\ (value e' \/ stuck e').
+
+(* Useful proofs end here *)
+
+Inductive eq_without_brands : exp -> exp -> Prop :=
+  | ewb_lam : forall l l' a b, eq_without_brands (elam l a b)
+                                                 (elam l' a b)
+  | ewb_obj : forall l l' fs, eq_without_brands (eobj l fs)
+                                                (eobj l' fs)
+  | ewb_bool : forall l l' v, eq_without_brands (ebool l v)
+                                                (ebool l' v).
+
+Lemma value_step : forall p v, multistep p v ->
+                               (exists p' p'' e E,
+                                 multistep p p' /\
+                                 decompose p' E e /\
+                                 ~ sub_exp v p' /\
+                                 red e v /\
+                                 p'' = plug v E /\
+                                 multistep p'' v).
 Proof.
-  intro.
-  (* I want to write the following proof, but I don't know how to: *)
-  (* fix pf e => assert (H := pyret_progress e).
-                 inversion H.
-                 Case "value". split. apply multi_refl. left. assumption.
-                 Case "stuck". split. apply multi_refl. right. assumption.
-                 Case "step". split. inversion H0. pf e' *)
   admit.
 Qed.
+
+
+
+Lemma sub_exp_dec : forall e e', sub_exp e e' \/ ~ sub_exp e e'.
+Proof.
+  admit.
+Qed.
+
+Lemma has_brand_dec : forall e b, has_brand_rel e b \/
+                                  ~ has_brand_rel e b.
+Proof.
+  admit.
+Qed.
+
+
+Ltac break_ands := repeat match goal with
+                              | [ H : _ /\ _ |- _ ] => let H1 := fresh "H" in let H2 := fresh "H" in inversion H as [H1 H2]; clear H
+                          end.
+
+Theorem brands_unforgable : forall b v p,
+                              multistep p v ->
+                              has_brand_rel v b ->
+                              (forall x b', sub_exp x p ->
+                              ~ has_brand_rel x b') ->
+                              (exists e v',
+                               eq_without_brands v v' /\
+                               sub_exp
+                                 (edelta add_brand_delta
+                                         (ebrand b) e) p /\
+                               multistep e v').
+Proof.
+  intros.
+  apply value_step in H.
+  inversion_clear H. inversion_clear H2. inversion_clear H.
+  inversion_clear H2.
+  break_ands. subst.
+  destruct (has_brand_dec x1 b).
+  Case "x1 has brand".
+  inversion H5; subst; inversion H4.
+  Case "x1 doesn't have brand".
+  assert (value v). inversion H0 ; auto.  
+  inversion H4 ; subst.
+  inversion H6; subst. 
+  assert (sub_exp (ebool l0 b1) (eapp (elam l x0 b0) e)).
+  destruct b0.
+  apply H1 with (b' := b) in H5. 
+  admit.
+  Case "x1 not in p".
+  inversion H3; subst.
+  
+  
+  
+  
+  
 
 Lemma sub_exps_nested : forall e e' e'', sub_exp e e' -> sub_exp e e'' -> sub_exp e' e'' ->
                                          e' <> e'' -> e <> e''.
@@ -1077,9 +1144,11 @@ Proof.
   admit.
 Qed.
 
-Theorem brands_unforgable : forall (b : brand) (e : exp) (p : exp) (r : exp),
+Theorem brands_unforgable : forall (b : brand) (e p r : exp),
                               has_brand_rel e b -> no_deltas p ->
-                              (forall x, sub_exp x p -> ~ x = e -> ~ has_brand_rel x b) ->
+                              (forall x, sub_exp x p -> ~ x = e ->
+                                         ~ has_brand_rel x b) ->
+                              value e ->
                               sub_exp e p -> multistep p r ->
                               has_brand_rel r b -> r = e.
 Proof.
@@ -1109,9 +1178,14 @@ Proof.
   SCase "e = edelta2". subst. inversion H0.
   SCase "e = egetfield". subst. inversion H4.
   Case "p steps".
+  inversion H2.
+  SCase "e = x".
   apply IHmulti.
   apply step_preserves_no_deltas with (e := x). assumption. assumption.
-  intros. apply step_wo_delta_preserves_brands with (x := x).
-  assumption. apply H1. constructor. reflexivity. (* grr... x could equal e *)
+  intros.
+  apply step_wo_delta_preserves_brands with (x := x).
+  assumption. apply H1. constructor. reflexivity.
+  
+  (* grr... x could equal e *)
 
 end Pyret.
